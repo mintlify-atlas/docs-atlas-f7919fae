@@ -1,0 +1,782 @@
+---
+title: Dependency Injection
+description: Service registration patterns, dependency injection strategies, and Angular DI integration
+---
+
+The Bitwarden Clients codebase uses dependency injection (DI) extensively to manage service dependencies, enable testing, and maintain loose coupling between components.
+
+## DI Patterns Overview
+
+The repository employs two primary DI patterns:
+
+1. **Manual DI via Service Containers** (CLI, Desktop background)
+2. **Angular DI Framework** (Browser, Desktop renderer, Web)
+
+<Info>
+**Why Two Patterns?**
+
+Non-Angular contexts (CLI, Electron main process) use manual service containers. Angular contexts leverage Angular's built-in DI system for component integration.
+</Info>
+
+## Service Abstraction Pattern
+
+All services follow an abstraction-first approach:
+
+```typescript
+// 1. Define abstraction (interface)
+export abstract class AuthService {
+  abstract login(email: string, password: string): Promise<void>;
+  abstract logout(): Promise<void>;
+  abstract isAuthenticated$: Observable<boolean>;
+}
+
+// 2. Implement concrete service
+export class AuthServiceImplementation implements AuthService {
+  constructor(
+    private apiService: ApiService,
+    private tokenService: TokenService,
+    private stateProvider: StateProvider,
+  ) {}
+
+  async login(email: string, password: string): Promise<void> {
+    // Implementation
+  }
+
+  async logout(): Promise<void> {
+    // Implementation
+  }
+
+  get isAuthenticated$(): Observable<boolean> {
+    return this.tokenService.hasToken$;
+  }
+}
+```
+
+**Benefits:**
+
+- **Testability:** Mock abstractions in tests
+- **Flexibility:** Swap implementations without changing consumers
+- **Decoupling:** Consumers depend on interfaces, not implementations
+
+## Manual Service Container (CLI)
+
+The CLI application uses a manual service container for dependency management:
+
+```typescript apps/cli/src/service-container/service-container.ts
+export class ServiceContainer {
+  // State services
+  stateProvider: StateProvider;
+  accountService: AccountService;
+  
+  // Crypto services
+  encryptService: EncryptService;
+  keyGenerationService: KeyGenerationService;
+  
+  // Auth services
+  authService: AuthService;
+  tokenService: TokenService;
+  loginStrategyService: LoginStrategyService;
+  
+  // Vault services
+  cipherService: CipherService;
+  folderService: FolderService;
+  collectionService: CollectionService;
+
+  async init() {
+    // 1. Initialize platform services (no dependencies)
+    this.stateProvider = new StateProvider(
+      new MemoryStorageService(),
+      new DiskStorageService(),
+    );
+    
+    this.accountService = new AccountServiceImplementation(
+      this.stateProvider,
+    );
+
+    // 2. Initialize crypto services (depend on platform services)
+    this.keyGenerationService = new DefaultKeyGenerationService();
+    
+    this.encryptService = new EncryptServiceImplementation(
+      this.keyGenerationService,
+    );
+
+    // 3. Initialize domain services (depend on crypto + platform)
+    this.tokenService = new TokenService(
+      this.stateProvider,
+      this.accountService,
+    );
+
+    this.authService = new AuthServiceImplementation(
+      this.apiService,
+      this.tokenService,
+      this.stateProvider,
+    );
+
+    // 4. Initialize collection service
+    this.collectionService = new DefaultCollectionService(
+      this.keyService,
+      this.encryptService,
+      this.i18nService,
+      this.stateProvider,
+    );
+  }
+}
+```
+
+### Service Container Lifecycle
+
+```typescript
+// apps/cli/src/program.ts
+async function main() {
+  // 1. Create service container
+  const serviceContainer = new ServiceContainer();
+  
+  // 2. Initialize all services
+  await serviceContainer.init();
+  
+  // 3. Use services throughout application
+  const program = new Program(serviceContainer);
+  await program.run(process.argv);
+}
+
+main();
+```
+
+### Accessing Services
+
+```typescript
+export class LoginCommand {
+  constructor(private serviceContainer: ServiceContainer) {}
+
+  async run(email: string, password: string) {
+    // Access services from container
+    const authService = this.serviceContainer.authService;
+    const tokenService = this.serviceContainer.tokenService;
+    
+    await authService.login(email, password);
+    const token = await tokenService.getAccessToken();
+    
+    console.log('Login successful!');
+  }
+}
+```
+
+## Angular Dependency Injection
+
+Angular applications (Browser, Desktop, Web) use Angular's DI framework:
+
+### Service Registration
+
+Services are registered in Angular modules:
+
+```typescript apps/browser/src/popup/services/services.module.ts
+import { NgModule } from '@angular/core';
+import { JslibServicesModule } from '@bitwarden/angular/services/jslib-services.module';
+
+@NgModule({
+  imports: [
+    JslibServicesModule, // Import shared service registrations
+  ],
+  providers: [
+    // Platform services
+    {
+      provide: WINDOW,
+      useValue: window,
+    },
+    {
+      provide: SECURE_STORAGE,
+      useClass: BrowserSecureStorageService,
+    },
+    {
+      provide: OBSERVABLE_MEMORY_STORAGE,
+      useClass: MemoryStorageService,
+    },
+
+    // Auth services
+    {
+      provide: AuthService,
+      useClass: AuthServiceImplementation,
+    },
+    {
+      provide: LoginComponentService,
+      useClass: LoginComponentService,
+    },
+
+    // Collection service with dependencies
+    {
+      provide: CollectionService,
+      useClass: DefaultCollectionService,
+      deps: [
+        KeyService,
+        EncryptService,
+        I18nService,
+        StateProvider,
+      ],
+    },
+
+    // Using factories for complex initialization
+    {
+      provide: VaultTimeoutService,
+      useFactory: (
+        accountService: AccountService,
+        masterPasswordService: MasterPasswordService,
+        pinService: PinService,
+      ) => {
+        return new DefaultVaultTimeoutService(
+          accountService,
+          masterPasswordService,
+          pinService,
+          VaultTimeoutStringType.OnRestart, // Platform-specific default
+        );
+      },
+      deps: [AccountService, MasterPasswordService, PinService],
+    },
+  ],
+})
+export class ServicesModule {}
+```
+
+### Injection Tokens
+
+Angular uses injection tokens for non-class dependencies:
+
+```typescript libs/angular/src/services/injection-tokens.ts
+import { InjectionToken } from '@angular/core';
+import { Observable } from 'rxjs';
+
+// Platform tokens
+export const WINDOW = new SafeInjectionToken<Window>('WINDOW');
+export const SECURE_STORAGE = new SafeInjectionToken<AbstractStorageService>('SECURE_STORAGE');
+export const MEMORY_STORAGE = new SafeInjectionToken<AbstractStorageService>('MEMORY_STORAGE');
+export const OBSERVABLE_MEMORY_STORAGE = new SafeInjectionToken<ObservableStorageService>('OBSERVABLE_MEMORY_STORAGE');
+
+// Configuration tokens
+export const CLIENT_TYPE = new SafeInjectionToken<ClientType>('CLIENT_TYPE');
+export const DEFAULT_VAULT_TIMEOUT = new SafeInjectionToken<VaultTimeoutStringType>('DEFAULT_VAULT_TIMEOUT');
+
+// Observable tokens
+export const SYSTEM_THEME_OBSERVABLE = new SafeInjectionToken<Observable<ThemeType>>('SYSTEM_THEME_OBSERVABLE');
+```
+
+**Usage:**
+
+```typescript
+@Component({
+  selector: 'app-vault',
+  template: '...'
+})
+export class VaultComponent {
+  constructor(
+    @Inject(WINDOW) private window: Window,
+    @Inject(CLIENT_TYPE) private clientType: ClientType,
+    @Inject(SECURE_STORAGE) private secureStorage: AbstractStorageService,
+    private cipherService: CipherService, // Class-based injection
+  ) {}
+}
+```
+
+### Safe Providers
+
+The codebase uses `safeProvider` to catch injection errors early:
+
+```typescript
+import { safeProvider } from '@bitwarden/angular/platform/utils/safe-provider';
+
+@NgModule({
+  providers: [
+    safeProvider({
+      provide: CollectionService,
+      useClass: DefaultCollectionService,
+      deps: [
+        KeyService,
+        EncryptService,
+        I18nService,
+        StateProvider,
+      ],
+    }),
+  ],
+})
+export class ServicesModule {}
+```
+
+`safeProvider` validates that all dependencies are registered and throws clear errors if any are missing.
+
+## Constructor Injection
+
+Services receive dependencies via constructor injection:
+
+```typescript
+export class DefaultCollectionService implements CollectionService {
+  constructor(
+    private keyService: KeyService,
+    private encryptService: EncryptService,
+    private i18nService: I18nService,
+    protected stateProvider: StateProvider,
+  ) {}
+
+  async encrypt(model: CollectionView, userId: UserId): Promise<Collection> {
+    // Use injected dependencies
+    const key = await firstValueFrom(
+      this.keyService.orgKeys$(userId).pipe(
+        filter((orgKeys) => !!orgKeys),
+        map((k) => k[model.organizationId]),
+      ),
+    );
+
+    return await model.encrypt(key, this.encryptService);
+  }
+}
+```
+
+**Key Points:**
+
+- Dependencies are `private` or `protected` by convention
+- Use TypeScript's parameter properties (`private keyService: KeyService`)
+- Abstract dependencies are injected, not concrete implementations
+
+## Service Scopes
+
+### Singleton Services (Default)
+
+Most services are singletons - one instance shared across the application:
+
+```typescript
+@NgModule({
+  providers: [
+    {
+      provide: AuthService,
+      useClass: AuthServiceImplementation,
+      // Singleton by default - no 'scope' specified
+    },
+  ],
+})
+export class ServicesModule {}
+```
+
+### Injectable Decorator
+
+Angular services can use `@Injectable()` decorator:
+
+```typescript
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root', // Singleton - provided in root injector
+})
+export class ConfigService {
+  constructor(private apiService: ApiService) {}
+}
+```
+
+<Info>
+**Root vs Module Providers**
+
+- `providedIn: 'root'` - Singleton across entire app, tree-shakeable
+- Module providers - Singleton within module scope
+- Component providers - New instance per component instance
+</Info>
+
+## Testing with DI
+
+### Mocking Dependencies
+
+```typescript
+import { mock } from 'jest-mock-extended';
+
+describe('DefaultCollectionService', () => {
+  let service: DefaultCollectionService;
+  let keyService: MockProxy<KeyService>;
+  let encryptService: MockProxy<EncryptService>;
+  let i18nService: MockProxy<I18nService>;
+  let stateProvider: MockProxy<StateProvider>;
+
+  beforeEach(() => {
+    // Create mocks
+    keyService = mock<KeyService>();
+    encryptService = mock<EncryptService>();
+    i18nService = mock<I18nService>();
+    stateProvider = mock<StateProvider>();
+
+    // Manually inject mocked dependencies
+    service = new DefaultCollectionService(
+      keyService,
+      encryptService,
+      i18nService,
+      stateProvider,
+    );
+  });
+
+  it('should encrypt collection', async () => {
+    // Setup mocks
+    const orgKey = Symbol() as any;
+    keyService.orgKeys$.mockReturnValue(of({ 'org-id': orgKey }));
+    
+    const collection = new CollectionView();
+    collection.organizationId = 'org-id';
+
+    // Test
+    await service.encrypt(collection, 'user-id' as UserId);
+
+    // Verify
+    expect(encryptService.encrypt).toHaveBeenCalled();
+  });
+});
+```
+
+### Angular Testing Module
+
+```typescript
+import { TestBed } from '@angular/core/testing';
+
+describe('VaultComponent', () => {
+  let component: VaultComponent;
+  let cipherService: jasmine.SpyObj<CipherService>;
+
+  beforeEach(() => {
+    // Create spy
+    const cipherServiceSpy = jasmine.createSpyObj('CipherService', [
+      'getAllDecrypted',
+      'encrypt',
+    ]);
+
+    // Configure testing module
+    TestBed.configureTestingModule({
+      declarations: [VaultComponent],
+      providers: [
+        // Override service with mock
+        { provide: CipherService, useValue: cipherServiceSpy },
+        // Use real implementations for others
+        CollectionService,
+        FolderService,
+      ],
+    });
+
+    // Get component instance
+    const fixture = TestBed.createComponent(VaultComponent);
+    component = fixture.componentInstance;
+    
+    // Get injected mock
+    cipherService = TestBed.inject(CipherService) as jasmine.SpyObj<CipherService>;
+  });
+
+  it('should load ciphers', async () => {
+    cipherService.getAllDecrypted.and.returnValue(Promise.resolve([]));
+    
+    await component.load();
+    
+    expect(cipherService.getAllDecrypted).toHaveBeenCalled();
+  });
+});
+```
+
+## Common DI Patterns
+
+### Factory Pattern
+
+Use factories for complex initialization:
+
+```typescript
+{
+  provide: SyncService,
+  useFactory: (
+    cipherService: CipherService,
+    folderService: FolderService,
+    accountService: AccountService,
+  ) => {
+    // Complex initialization logic
+    const syncService = new DefaultSyncService(
+      cipherService,
+      folderService,
+    );
+    
+    // Subscribe to account changes
+    accountService.activeAccount$.subscribe((account) => {
+      syncService.setUserId(account.id);
+    });
+    
+    return syncService;
+  },
+  deps: [CipherService, FolderService, AccountService],
+}
+```
+
+### Multi Providers
+
+Register multiple values for the same token:
+
+```typescript
+export const APP_INITIALIZER_PROVIDERS = new InjectionToken('APP_INITIALIZER_PROVIDERS');
+
+@NgModule({
+  providers: [
+    {
+      provide: APP_INITIALIZER_PROVIDERS,
+      useValue: initializeTheme,
+      multi: true,
+    },
+    {
+      provide: APP_INITIALIZER_PROVIDERS,
+      useValue: initializeAuth,
+      multi: true,
+    },
+  ],
+})
+export class AppModule {
+  constructor(@Inject(APP_INITIALIZER_PROVIDERS) initializers: Function[]) {
+    // Run all initializers
+    initializers.forEach(init => init());
+  }
+}
+```
+
+### Optional Dependencies
+
+Mark dependencies as optional:
+
+```typescript
+import { Optional } from '@angular/core';
+
+export class LoggingService {
+  constructor(
+    @Optional() private sentryService?: SentryService,
+  ) {}
+
+  logError(error: Error) {
+    console.error(error);
+    
+    // Only log to Sentry if service is available
+    if (this.sentryService) {
+      this.sentryService.captureException(error);
+    }
+  }
+}
+```
+
+## Platform-Specific Services
+
+Different platforms register different implementations:
+
+```typescript
+// Browser extension
+@NgModule({
+  providers: [
+    {
+      provide: StorageService,
+      useClass: BrowserStorageService, // Uses chrome.storage API
+    },
+    {
+      provide: MessagingService,
+      useClass: BrowserMessagingService, // Uses chrome.runtime messaging
+    },
+  ],
+})
+export class BrowserServicesModule {}
+
+// Desktop application
+@NgModule({
+  providers: [
+    {
+      provide: StorageService,
+      useClass: ElectronStorageService, // Uses electron-store
+    },
+    {
+      provide: MessagingService,
+      useClass: ElectronMessagingService, // Uses IPC
+    },
+  ],
+})
+export class DesktopServicesModule {}
+```
+
+## State Provider Pattern
+
+The `StateProvider` manages application state with DI:
+
+```typescript
+export class StateProvider {
+  constructor(
+    private memoryStorage: AbstractStorageService,
+    private diskStorage: AbstractStorageService,
+  ) {}
+
+  getUser<T>(userId: UserId, key: StateDefinition): SingleUserState<T> {
+    return new DefaultSingleUserState(
+      userId,
+      key,
+      this.diskStorage,
+    );
+  }
+
+  getGlobal<T>(key: StateDefinition): GlobalState<T> {
+    return new DefaultGlobalState(
+      key,
+      this.diskStorage,
+    );
+  }
+}
+```
+
+**Usage in services:**
+
+```typescript
+export class DefaultCollectionService implements CollectionService {
+  constructor(protected stateProvider: StateProvider) {}
+
+  private encryptedState(userId: UserId): SingleUserState<Record<CollectionId, CollectionData>> {
+    return this.stateProvider.getUser(userId, ENCRYPTED_COLLECTION_DATA_KEY);
+  }
+
+  async upsert(toUpdate: CollectionData, userId: UserId): Promise<void> {
+    await this.encryptedState(userId).update((collections) => {
+      collections[toUpdate.id] = toUpdate;
+      return collections;
+    });
+  }
+}
+```
+
+## Circular Dependencies
+
+<Warning>
+**Avoid Circular Dependencies**
+
+Circular dependencies cause initialization errors and make code hard to test.
+</Warning>
+
+**Bad Example:**
+
+```typescript
+// ❌ Circular dependency
+// auth.service.ts
+export class AuthService {
+  constructor(private vaultService: VaultService) {}
+}
+
+// vault.service.ts
+export class VaultService {
+  constructor(private authService: AuthService) {} // Circular!
+}
+```
+
+**Solution 1: Extract Shared Logic**
+
+```typescript
+// Create a new service for shared functionality
+export class UserStateService {
+  // Shared state/logic
+}
+
+export class AuthService {
+  constructor(private userState: UserStateService) {}
+}
+
+export class VaultService {
+  constructor(private userState: UserStateService) {}
+}
+```
+
+**Solution 2: Use Events/Observables**
+
+```typescript
+export class AuthService {
+  readonly authenticated$ = new Subject<void>();
+  
+  async login() {
+    // ...
+    this.authenticated$.next();
+  }
+}
+
+export class VaultService {
+  constructor(private authService: AuthService) {
+    // Subscribe to events instead of calling methods
+    this.authService.authenticated$.subscribe(() => {
+      this.loadVault();
+    });
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Abstract Over Concrete" icon="file-contract">
+    Depend on abstractions (interfaces), not concrete implementations
+  </Card>
+  <Card title="Constructor Injection Only" icon="syringe">
+    Never use property injection or method injection
+  </Card>
+  <Card title="Minimize Dependencies" icon="minimize">
+    Services with too many dependencies indicate poor design
+  </Card>
+  <Card title="Single Responsibility" icon="bullseye">
+    Each service should have one clear responsibility
+  </Card>
+</CardGroup>
+
+<Steps>
+  <Step title="Define the abstraction">
+    Create abstract class or interface defining the contract
+  </Step>
+  <Step title="Implement the service">
+    Create concrete implementation with constructor dependencies
+  </Step>
+  <Step title="Register in DI container">
+    Add to service container or Angular module providers
+  </Step>
+  <Step title="Inject and use">
+    Inject abstraction in consumers, never the implementation
+  </Step>
+</Steps>
+
+## Debugging DI Issues
+
+### Missing Provider Error
+
+```
+Error: No provider for CollectionService!
+```
+
+**Solution:** Register the service in the appropriate module:
+
+```typescript
+@NgModule({
+  providers: [
+    { provide: CollectionService, useClass: DefaultCollectionService },
+  ],
+})
+export class ServicesModule {}
+```
+
+### Circular Dependency Error
+
+```
+Error: Cannot instantiate cyclic dependency! AuthService -> VaultService -> AuthService
+```
+
+**Solution:** Refactor to remove circular dependency (see patterns above).
+
+### Provider Order Matters
+
+In service containers, initialize dependencies before dependents:
+
+```typescript
+// ✅ Correct order
+this.stateProvider = new StateProvider(...);
+this.accountService = new AccountService(this.stateProvider);
+
+// ❌ Wrong order - accountService needs stateProvider!
+this.accountService = new AccountService(this.stateProvider);
+this.stateProvider = new StateProvider(...);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Service Architecture" icon="sitemap" href="/libs/overview">
+    Learn about service layers and patterns
+  </Card>
+  <Card title="State Management" icon="database" href="/guide/state/overview">
+    Understand how state is managed across services
+  </Card>
+</CardGroup>

@@ -1,0 +1,469 @@
+---
+title: Desktop App Architecture
+description: Electron architecture, process separation, and IPC patterns in the Bitwarden Desktop app
+---
+
+The Bitwarden Desktop app is built on Electron, which uses a multi-process architecture. Understanding this architecture is critical for developing the desktop app correctly.
+
+## Electron Multi-Process Architecture
+
+Electron applications run in two distinct process types:
+
+### Main Process
+
+**Location**: `/apps/desktop/src/main/`
+
+**Entry Point**: `/apps/desktop/src/main.ts`
+
+The main process:
+- Runs Node.js with full system access
+- Has access to all Electron APIs
+- Manages application lifecycle
+- Creates and controls browser windows
+- Handles native integrations (file system, OS APIs, etc.)
+- Cannot import Angular or browser-only code
+
+**Key responsibilities**:
+
+```typescript
+export class Main {
+  windowMain: WindowMain;           // Window management
+  messagingMain: MessagingMain;     // IPC messaging
+  updaterMain: UpdaterMain;         // Auto-updates
+  menuMain: MenuMain;               // Application menu
+  trayMain: TrayMain;               // System tray
+  powerMonitorMain: PowerMonitorMain; // Power events
+  nativeMessagingMain: NativeMessagingMain; // Browser extension communication
+  clipboardMain: ClipboardMain;     // Clipboard operations
+  biometricsService: DesktopBiometricsService; // Biometric auth
+  sshAgentService: MainSshAgentService; // SSH agent
+  // ...
+}
+```
+
+### Renderer Process
+
+**Location**: `/apps/desktop/src/app/`
+
+**Entry Point**: `/apps/desktop/src/app/main.ts` (Angular bootstrap)
+
+The renderer process:
+- Runs Chromium (browser environment)
+- Hosts the Angular application
+- Has limited system access (sandboxed)
+- Cannot directly import Node.js modules
+- Cannot directly use Electron main process APIs
+
+**Environment**: Standard web application with Angular, running in a Chromium-based browser window.
+
+<Warning>
+**CRITICAL RULE**: Never import Node.js modules directly in the renderer process!
+
+This will cause runtime errors because Node.js APIs are not available in the browser environment. Use preload scripts or IPC instead.
+</Warning>
+
+## Preload Scripts
+
+**Location**: `/apps/desktop/src/preload.ts` and feature-specific preload files
+
+Preload scripts are the **bridge** between main and renderer processes. They:
+
+- Run before the renderer process loads
+- Have access to both Node.js and browser APIs
+- Expose safe APIs to the renderer via `contextBridge`
+- Are the **only** way to safely expose Node.js functionality to the renderer
+
+### Main Preload Structure
+
+```typescript
+// apps/desktop/src/preload.ts
+import { contextBridge } from "electron";
+
+import tools from "./app/tools/preload";
+import auth from "./auth/preload";
+import autofill from "./autofill/preload";
+import keyManagement from "./key-management/preload";
+import platform from "./platform/preload";
+
+// Each team owns a subspace of the `ipc` global variable
+export const ipc = {
+  auth,
+  autofill,
+  platform,
+  keyManagement,
+  tools,
+};
+
+// Expose to renderer as window.ipc
+contextBridge.exposeInMainWorld("ipc", ipc);
+```
+
+### Feature-Specific Preload Example
+
+```typescript
+// apps/desktop/src/platform/preload.ts
+import { ipcRenderer } from "electron";
+
+const storage = {
+  get: <T>(key: string): Promise<T> => 
+    ipcRenderer.invoke("storageService", { action: "get", key }),
+  save: (key: string, obj: any): Promise<void> => 
+    ipcRenderer.invoke("storageService", { action: "save", key, obj }),
+  remove: (key: string): Promise<void> => 
+    ipcRenderer.invoke("storageService", { action: "remove", key }),
+};
+
+const passwords = {
+  get: (key: string, keySuffix: string): Promise<string> =>
+    ipcRenderer.invoke("keytar", { action: "getPassword", key, keySuffix }),
+  set: (key: string, keySuffix: string, value: string): Promise<void> =>
+    ipcRenderer.invoke("keytar", { action: "setPassword", key, keySuffix, value }),
+  // ...
+};
+
+export default {
+  storage,
+  passwords,
+  clipboard,
+  sshAgent,
+  powermonitor,
+  // ...
+};
+```
+
+## Inter-Process Communication (IPC)
+
+Electron provides IPC mechanisms for communication between processes:
+
+### IPC Invoke (Request-Response)
+
+**Best for**: Operations that return a value
+
+**Renderer → Main**:
+
+```typescript
+// Renderer (via preload)
+const version = await ipcRenderer.invoke("appVersion");
+
+// Main process handler
+ipcMain.handle("appVersion", async () => {
+  return app.getVersion();
+});
+```
+
+### IPC Send (One-Way)
+
+**Best for**: Fire-and-forget notifications
+
+**Renderer → Main**:
+
+```typescript
+// Renderer (via preload)
+ipcRenderer.send("window-focus");
+
+// Main process handler
+ipcMain.on("window-focus", () => {
+  mainWindow.focus();
+});
+```
+
+### IPC Send from Main to Renderer
+
+**Main → Renderer**:
+
+```typescript
+// Main process
+window.webContents.send("systemThemeUpdated", theme);
+
+// Renderer (via preload listener)
+ipcRenderer.on("systemThemeUpdated", (_event, theme: ThemeType) => {
+  callback(theme);
+});
+```
+
+## Context Isolation
+
+Electron uses **context isolation** for security:
+
+- Renderer process code runs in an isolated context
+- Direct access to Electron/Node.js APIs is blocked
+- Only APIs explicitly exposed via `contextBridge` are available
+
+```typescript
+// ❌ WRONG - Direct access blocked
+import * as fs from "fs";
+fs.readFileSync("/path/to/file");
+
+// ✅ CORRECT - Use IPC through preload
+const data = await window.ipc.platform.storage.get("key");
+```
+
+<Warning>
+**Never disable context isolation!** This is a critical security feature. Always use `contextBridge` to expose APIs.
+</Warning>
+
+## Service Architecture
+
+### Main Process Services
+
+Services in the main process handle system-level operations:
+
+```typescript
+// Window management
+class WindowMain {
+  async init() {
+    this.createWindow();
+    this.setupWindowHandlers();
+  }
+}
+
+// Native messaging for browser extensions
+class NativeMessagingMain {
+  listen() {
+    // Handle messages from browser extensions
+  }
+}
+
+// Biometric authentication
+class MainBiometricsService {
+  async authenticateWithBiometric() {
+    // Call native Rust module
+    return await nativeModule.biometrics.prompt();
+  }
+}
+```
+
+### Renderer Process Services
+
+Angular services in the renderer process:
+
+```typescript
+@Injectable()
+export class DesktopPlatformService {
+  // Use IPC to communicate with main process
+  async getVersion(): Promise<string> {
+    return window.ipc.platform.versions.app();
+  }
+}
+```
+
+## State Management
+
+State is managed differently in each process:
+
+### Main Process State
+
+```typescript
+export class Main {
+  storageService: ElectronStorageService;
+  memoryStorageService: MemoryStorageService;
+  environmentService: DefaultEnvironmentService;
+  // State providers for main process
+}
+```
+
+### Renderer Process State
+
+- Angular services and dependency injection
+- RxJS for reactive state
+- Shared state providers from `@bitwarden/state-internal`
+
+### Cross-Process State Synchronization
+
+Use IPC to synchronize state:
+
+```typescript
+// Renderer notifies main of state change
+window.ipc.platform.sendMessage({ command: "logout" });
+
+// Main process broadcasts to all renderer windows
+BrowserWindow.getAllWindows().forEach(win => {
+  win.webContents.send("messagingService", { command: "logout" });
+});
+```
+
+## Native Module Integration
+
+Rust native modules are loaded in the **main process only**:
+
+```typescript
+// Main process - Direct import of N-API module
+import { biometrics, passwords } from "@bitwarden/desktop-napi";
+
+class MainBiometricsService {
+  async prompt(message: string): Promise<boolean> {
+    return await biometrics.prompt(Buffer.from([]), message);
+  }
+}
+
+// IPC handler exposes functionality to renderer
+ipcMain.handle("biometric.prompt", async (event, message) => {
+  return mainBiometricsService.prompt(message);
+});
+```
+
+See [Native Modules](/apps/desktop/native-modules) for detailed information.
+
+## Security Considerations
+
+### Principle of Least Privilege
+
+- Renderer process is **sandboxed** and has minimal privileges
+- Main process has **full system access**
+- Only expose necessary APIs through preload scripts
+
+### Input Validation
+
+```typescript
+// Always validate IPC inputs in main process
+ipcMain.handle("storage.get", async (event, key) => {
+  // Validate key before accessing storage
+  if (typeof key !== "string" || key.length === 0) {
+    throw new Error("Invalid key");
+  }
+  return storageService.get(key);
+});
+```
+
+### Secure IPC Channels
+
+```typescript
+// Use namespaced channel names
+const AUTOTYPE_IPC_CHANNELS = {
+  RUN_COMMAND: "autofill.runCommand",
+  LISTENER_READY: "autofill.listenerReady",
+  PASSKEY_REGISTRATION: "autofill.passkeyRegistration",
+};
+```
+
+## Process Lifecycle
+
+### Application Startup
+
+1. **Main process starts** (`main.ts`)
+2. Services are initialized (storage, crypto, etc.)
+3. **Window is created** (`WindowMain`)
+4. **Preload script runs** (before renderer)
+5. **Renderer process starts** (Angular app)
+6. Angular application bootstraps
+7. IPC communication established
+
+### Application Shutdown
+
+1. User triggers quit
+2. Main process emits `before-quit` event
+3. Cleanup handlers run
+4. Windows are closed
+5. Main process exits
+
+## Process Communication Patterns
+
+### Pattern 1: Simple Request-Response
+
+```typescript
+// Renderer
+const version = await window.ipc.platform.versions.app();
+
+// Preload
+versions: {
+  app: (): Promise<string> => ipcRenderer.invoke("appVersion")
+}
+
+// Main
+ipcMain.handle("appVersion", () => app.getVersion());
+```
+
+### Pattern 2: Event Broadcasting
+
+```typescript
+// Main broadcasts event
+window.webContents.send("systemThemeUpdated", theme);
+
+// Preload exposes listener
+onSystemThemeUpdated: (callback) => {
+  ipcRenderer.on("systemThemeUpdated", (_event, theme) => callback(theme));
+}
+
+// Renderer subscribes
+window.ipc.platform.onSystemThemeUpdated((theme) => {
+  this.updateTheme(theme);
+});
+```
+
+### Pattern 3: Bidirectional Communication
+
+```typescript
+// Renderer sends command
+window.ipc.platform.sendMessage({ command: "logout" });
+
+// Main handles and broadcasts
+ipcMain.on("messagingService", (event, message) => {
+  // Broadcast to all windows
+  BrowserWindow.getAllWindows().forEach(win => {
+    win.webContents.send("messagingService", message);
+  });
+});
+
+// All renderers receive via listener
+window.ipc.platform.onMessage.addListener((message) => {
+  if (message.command === "logout") {
+    // Handle logout
+  }
+});
+```
+
+## Critical Development Rules
+
+<Warning>
+**Main Process Context**:
+- ✅ Can import Node.js modules
+- ✅ Can import Electron main process APIs
+- ✅ Can import Rust N-API modules
+- ❌ Cannot import Angular modules
+- ❌ Cannot import browser-only code
+
+**Renderer Process Context**:
+- ✅ Can import Angular modules
+- ✅ Can import browser APIs
+- ✅ Can use `window.ipc` exposed by preload
+- ❌ Cannot import Node.js modules
+- ❌ Cannot import Electron APIs directly
+- ❌ Cannot import Rust N-API modules directly
+
+**Preload Script Context**:
+- ✅ Can import Electron's `ipcRenderer` and `contextBridge`
+- ✅ Can import Node.js modules
+- ✅ Bridge between main and renderer
+- ❌ Should not import large libraries
+- ❌ Cannot import Angular
+</Warning>
+
+## Debugging
+
+### Main Process
+
+```bash
+# Launch with Chrome DevTools for main process
+electron --inspect=5858 ./build
+
+# Or use VSCode debugger with launch.json
+```
+
+### Renderer Process
+
+Use Chrome DevTools (automatically available in development):
+
+```typescript
+// Open DevTools from main process
+window.webContents.openDevTools();
+```
+
+### IPC Messages
+
+Log IPC messages for debugging:
+
+```typescript
+ipcMain.on("*", (event, channel, ...args) => {
+  console.log("IPC:", channel, args);
+});
+```

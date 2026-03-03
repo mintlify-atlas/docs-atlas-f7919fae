@@ -1,0 +1,687 @@
+---
+title: Two-Factor Authentication
+description: API reference for two-factor authentication services and providers
+---
+
+## Overview
+
+The Two-Factor Authentication API provides comprehensive support for multiple 2FA providers including authenticator apps (TOTP), email, Duo, YubiKey, WebAuthn (FIDO2), and recovery codes. It manages both user-level and organization-level 2FA configurations.
+
+## TwoFactorService
+
+Core service for managing two-factor authentication providers and state.
+
+### Methods
+
+#### init()
+
+```typescript
+abstract init(): void
+```
+
+Initializes the client-side TwoFactorProviders constant with localized translations. Must be called during application startup.
+
+---
+
+#### getSupportedProviders()
+
+```typescript
+abstract getSupportedProviders(win: Window): Promise<TwoFactorProviderDetails[]>
+```
+
+Gets a list of two-factor providers that are supported on the current client. For example, WebAuthn and Duo are not available on all clients.
+
+**Parameters:**
+- `win` - Window object for client capability detection
+
+**Returns:** `Promise<TwoFactorProviderDetails[]>` - List of supported providers or empty list if none are stored
+
+---
+
+#### getDefaultProvider()
+
+```typescript
+abstract getDefaultProvider(webAuthnSupported: boolean): Promise<TwoFactorProviderType>
+```
+
+Gets the previously selected two-factor provider or the default provider based on priority.
+
+**Parameters:**
+- `webAuthnSupported` - Whether WebAuthn is supported by the client. Prevents WebAuthn from being the default provider if false
+
+**Returns:** `Promise<TwoFactorProviderType>` - The default or selected provider type
+
+---
+
+#### setSelectedProvider()
+
+```typescript
+abstract setSelectedProvider(type: TwoFactorProviderType): Promise<void>
+```
+
+Sets the selected two-factor provider in state.
+
+**Parameters:**
+- `type` - The type of two-factor provider to set as selected
+
+**Returns:** `Promise<void>`
+
+---
+
+#### clearSelectedProvider()
+
+```typescript
+abstract clearSelectedProvider(): Promise<void>
+```
+
+Clears the selected two-factor provider from state.
+
+**Returns:** `Promise<void>`
+
+---
+
+#### setProviders()
+
+```typescript
+abstract setProviders(response: IdentityTwoFactorResponse): Promise<void>
+```
+
+Sets the list of available two-factor providers in state from the Identity service response.
+
+**Parameters:**
+- `response` - The response from Identity when 2FA is required. Includes the list of available 2FA providers
+
+**Returns:** `Promise<void>`
+
+---
+
+#### clearProviders()
+
+```typescript
+abstract clearProviders(): Promise<void>
+```
+
+Clears the list of available two-factor providers from state.
+
+**Returns:** `Promise<void>`
+
+---
+
+#### getProviders()
+
+```typescript
+abstract getProviders(): Promise<Map<TwoFactorProviderType, { [key: string]: string }> | null>
+```
+
+Gets the list of two-factor providers from state. No filtering is done, so this returns all providers including potentially unsupported ones.
+
+**Returns:** `Promise<Map<TwoFactorProviderType, object> | null>` - Map of providers or null
+
+---
+
+### Provider Configuration Methods (User)
+
+#### getEnabledTwoFactorProviders()
+
+```typescript
+abstract getEnabledTwoFactorProviders(): Promise<ListResponse<TwoFactorProviderResponse>>
+```
+
+Gets the enabled two-factor providers for the current user from the API. Used for settings management.
+
+**Returns:** `Promise<ListResponse<TwoFactorProviderResponse>>` - List of enabled provider configurations
+
+---
+
+#### getTwoFactorAuthenticator()
+
+```typescript
+abstract getTwoFactorAuthenticator(
+  request: SecretVerificationRequest
+): Promise<TwoFactorAuthenticatorResponse>
+```
+
+Gets the authenticator (TOTP) two-factor configuration for the current user. Requires user verification via master password or OTP.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorAuthenticatorResponse>` - Authenticator configuration including the secret key
+
+---
+
+#### getTwoFactorEmail()
+
+```typescript
+abstract getTwoFactorEmail(
+  request: SecretVerificationRequest
+): Promise<TwoFactorEmailResponse>
+```
+
+Gets the email two-factor configuration for the current user. Requires user verification.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<TwoFactorEmailResponse>` - Email two-factor configuration
+
+---
+
+#### getTwoFactorDuo()
+
+```typescript
+abstract getTwoFactorDuo(
+  request: SecretVerificationRequest
+): Promise<TwoFactorDuoResponse>
+```
+
+Gets the Duo two-factor configuration for the current user. Requires user verification and active premium subscription.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<TwoFactorDuoResponse>` - Duo configuration
+
+---
+
+#### getTwoFactorYubiKey()
+
+```typescript
+abstract getTwoFactorYubiKey(
+  request: SecretVerificationRequest
+): Promise<TwoFactorYubiKeyResponse>
+```
+
+Gets the YubiKey OTP two-factor configuration for the current user. Requires user verification and active premium subscription.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<TwoFactorYubiKeyResponse>` - YubiKey configuration
+
+---
+
+#### getTwoFactorWebAuthn()
+
+```typescript
+abstract getTwoFactorWebAuthn(
+  request: SecretVerificationRequest
+): Promise<TwoFactorWebAuthnResponse>
+```
+
+Gets the WebAuthn (FIDO2) two-factor configuration for the current user. Requires user verification.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<TwoFactorWebAuthnResponse>` - WebAuthn configuration including registered credentials
+
+---
+
+#### getTwoFactorWebAuthnChallenge()
+
+```typescript
+abstract getTwoFactorWebAuthnChallenge(
+  request: SecretVerificationRequest
+): Promise<ChallengeResponse>
+```
+
+Gets a WebAuthn challenge for registering a new WebAuthn credential. Must be called before `putTwoFactorWebAuthn()` to obtain the cryptographic challenge required for credential creation.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<ChallengeResponse>` - Credential creation options containing the challenge
+
+---
+
+#### getTwoFactorRecover()
+
+```typescript
+abstract getTwoFactorRecover(
+  request: SecretVerificationRequest
+): Promise<TwoFactorRecoverResponse>
+```
+
+Gets the recovery code configuration for the current user. The recovery code should be stored securely by the user. Requires user verification.
+
+**Parameters:**
+- `request` - Secret verification request to prove authentication
+
+**Returns:** `Promise<TwoFactorRecoverResponse>` - Recovery code configuration
+
+---
+
+### Provider Update Methods (User)
+
+#### putTwoFactorAuthenticator()
+
+```typescript
+abstract putTwoFactorAuthenticator(
+  request: UpdateTwoFactorAuthenticatorRequest
+): Promise<TwoFactorAuthenticatorResponse>
+```
+
+Enables or updates the authenticator (TOTP) two-factor provider. Validates the provided token against the shared secret before enabling.
+
+**Parameters:**
+- `request` - Update request containing the configuration. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorAuthenticatorResponse>` - Updated authenticator configuration
+
+---
+
+#### deleteTwoFactorAuthenticator()
+
+```typescript
+abstract deleteTwoFactorAuthenticator(
+  request: DisableTwoFactorAuthenticatorRequest
+): Promise<TwoFactorProviderResponse>
+```
+
+Disables the authenticator (TOTP) two-factor provider for the current user. Requires user verification token.
+
+**Parameters:**
+- `request` - Disable request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorProviderResponse>` - Updated provider status
+
+---
+
+#### putTwoFactorEmail()
+
+```typescript
+abstract putTwoFactorEmail(
+  request: UpdateTwoFactorEmailRequest
+): Promise<TwoFactorEmailResponse>
+```
+
+Enables or updates the email two-factor provider. Validates the email verification token sent via `postTwoFactorEmailSetup()` before enabling.
+
+**Parameters:**
+- `request` - Update request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorEmailResponse>` - Updated email two-factor configuration
+
+---
+
+#### putTwoFactorDuo()
+
+```typescript
+abstract putTwoFactorDuo(
+  request: UpdateTwoFactorDuoRequest
+): Promise<TwoFactorDuoResponse>
+```
+
+Enables or updates the Duo two-factor provider for the current user. Requires user verification and active premium subscription.
+
+**Parameters:**
+- `request` - Update request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorDuoResponse>` - Updated Duo configuration
+
+---
+
+#### putTwoFactorYubiKey()
+
+```typescript
+abstract putTwoFactorYubiKey(
+  request: UpdateTwoFactorYubikeyOtpRequest
+): Promise<TwoFactorYubiKeyResponse>
+```
+
+Enables or updates the YubiKey OTP two-factor provider. Validates each provided YubiKey by testing an OTP from the device. Supports up to 5 YubiKey devices. Requires user verification and active premium subscription.
+
+**Parameters:**
+- `request` - Update request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorYubiKeyResponse>` - Updated YubiKey configuration
+
+---
+
+#### putTwoFactorWebAuthn()
+
+```typescript
+abstract putTwoFactorWebAuthn(
+  request: UpdateTwoFactorWebAuthnRequest
+): Promise<TwoFactorWebAuthnResponse>
+```
+
+Registers a new WebAuthn (FIDO2) credential for two-factor authentication. Must be called after `getTwoFactorWebAuthnChallenge()` to complete the registration flow.
+
+**Parameters:**
+- `request` - Update request containing the device response. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorWebAuthnResponse>` - Updated WebAuthn configuration with the new credential
+
+---
+
+#### deleteTwoFactorWebAuthn()
+
+```typescript
+abstract deleteTwoFactorWebAuthn(
+  request: UpdateTwoFactorWebAuthnDeleteRequest
+): Promise<TwoFactorWebAuthnResponse>
+```
+
+Removes a specific WebAuthn (FIDO2) credential from the user's account. Other registered WebAuthn credentials remain active. Requires user verification.
+
+**Parameters:**
+- `request` - Delete request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorWebAuthnResponse>` - Updated WebAuthn configuration
+
+---
+
+#### putTwoFactorDisable()
+
+```typescript
+abstract putTwoFactorDisable(
+  request: TwoFactorProviderRequest
+): Promise<TwoFactorProviderResponse>
+```
+
+Disables a specific two-factor provider for the current user. The provider will no longer be required or usable. Requires user verification.
+
+**Parameters:**
+- `request` - Provider request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<TwoFactorProviderResponse>` - Updated provider status
+
+---
+
+### Email 2FA Methods
+
+#### postTwoFactorEmailSetup()
+
+```typescript
+abstract postTwoFactorEmailSetup(request: TwoFactorEmailRequest): Promise<any>
+```
+
+Initiates email two-factor setup by sending a verification code to the specified email address. This is the first step in enabling email two-factor authentication. The verification code must be provided to `putTwoFactorEmail()` to complete setup. Only used during initial configuration, not during login flows.
+
+**Parameters:**
+- `request` - Email request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<any>` - Resolves when verification email has been sent
+
+---
+
+#### postTwoFactorEmail()
+
+```typescript
+abstract postTwoFactorEmail(request: TwoFactorEmailRequest): Promise<any>
+```
+
+Sends a two-factor authentication code via email during the login flow. Supports multiple authentication contexts including standard login, SSO, and passwordless flows. This is used to deliver codes during authentication, not during initial setup.
+
+**Parameters:**
+- `request` - Email request. Use `UserVerificationService.buildRequest()` to create
+
+**Returns:** `Promise<any>` - Resolves when authentication email has been sent
+
+---
+
+### Organization Methods
+
+#### getTwoFactorOrganizationProviders()
+
+```typescript
+abstract getTwoFactorOrganizationProviders(
+  organizationId: string
+): Promise<ListResponse<TwoFactorProviderResponse>>
+```
+
+Gets the enabled two-factor providers for an organization. Requires organization administrator permissions.
+
+**Parameters:**
+- `organizationId` - The ID of the organization
+
+**Returns:** `Promise<ListResponse<TwoFactorProviderResponse>>` - List of enabled provider configurations
+
+---
+
+#### getTwoFactorOrganizationDuo()
+
+```typescript
+abstract getTwoFactorOrganizationDuo(
+  organizationId: string,
+  request: SecretVerificationRequest
+): Promise<TwoFactorDuoResponse>
+```
+
+Gets the Duo two-factor configuration for an organization. Requires user verification and organization policy management permissions.
+
+**Parameters:**
+- `organizationId` - The ID of the organization
+- `request` - Secret verification request
+
+**Returns:** `Promise<TwoFactorDuoResponse>` - Organization Duo configuration
+
+---
+
+#### putTwoFactorOrganizationDuo()
+
+```typescript
+abstract putTwoFactorOrganizationDuo(
+  organizationId: string,
+  request: UpdateTwoFactorDuoRequest
+): Promise<TwoFactorDuoResponse>
+```
+
+Enables or updates the Duo two-factor provider for an organization. Requires user verification and organization policy management permissions.
+
+**Parameters:**
+- `organizationId` - The ID of the organization
+- `request` - Update request
+
+**Returns:** `Promise<TwoFactorDuoResponse>` - Updated organization Duo configuration
+
+---
+
+#### putTwoFactorOrganizationDisable()
+
+```typescript
+abstract putTwoFactorOrganizationDisable(
+  organizationId: string,
+  request: TwoFactorProviderRequest
+): Promise<TwoFactorProviderResponse>
+```
+
+Disables a specific two-factor provider for an organization. Requires user verification and organization policy management permissions.
+
+**Parameters:**
+- `organizationId` - The ID of the organization
+- `request` - Provider request
+
+**Returns:** `Promise<TwoFactorProviderResponse>` - Updated provider status
+
+---
+
+## Types and Enums
+
+### TwoFactorProviderType
+
+```typescript
+enum TwoFactorProviderType {
+  Authenticator = 0,    // TOTP authenticator app
+  Email = 1,            // Email verification codes
+  Duo = 2,              // Duo personal (requires premium)
+  Yubikey = 3,          // YubiKey OTP (requires premium)
+  U2f = 4,              // Legacy U2F (deprecated)
+  Remember = 5,         // Remember device token
+  OrganizationDuo = 6,  // Duo organization (no premium required)
+  WebAuthn = 7,         // FIDO2/WebAuthn
+  RecoveryCode = 8      // Backup recovery code
+}
+```
+
+### TwoFactorProviderDetails
+
+```typescript
+interface TwoFactorProviderDetails {
+  type: TwoFactorProviderType;       // Unique identifier
+  name: string | null;                // Localized display name
+  description: string | null;         // Localized description
+  priority: number;                   // Selection priority (0-10, higher preferred)
+  sort: number;                       // Display order in lists (1 = first)
+  premium: boolean;                   // Requires premium subscription
+}
+```
+
+### TokenTwoFactorRequest
+
+```typescript
+class TokenTwoFactorRequest {
+  constructor(
+    public provider: TwoFactorProviderType = null,
+    public token: string = null,
+    public remember: boolean = false
+  )
+}
+```
+
+---
+
+## Example Usage
+
+### Handling 2FA During Login
+
+```typescript
+import { TwoFactorService, TwoFactorProviderType, TokenTwoFactorRequest } from '@bitwarden/common';
+
+const twoFactorService: TwoFactorService;
+
+// After login attempt returns 2FA required
+const authResult = await loginService.logIn(credentials);
+
+if (authResult.twoFactorProviders) {
+  // Get supported providers for this client
+  const supportedProviders = await twoFactorService.getSupportedProviders(window);
+  
+  // Get default provider (or previously selected)
+  const defaultProvider = await twoFactorService.getDefaultProvider(
+    window.PublicKeyCredential !== undefined
+  );
+  
+  // User selects provider and enters code
+  const twoFactorToken = new TokenTwoFactorRequest(
+    TwoFactorProviderType.Authenticator,
+    '123456',
+    true // Remember this device
+  );
+  
+  // Complete login with 2FA
+  const finalResult = await loginService.logInTwoFactor(twoFactorToken);
+}
+```
+
+### Enabling Authenticator 2FA
+
+```typescript
+import { UserVerificationService } from '@bitwarden/common';
+
+const userVerificationService: UserVerificationService;
+const twoFactorService: TwoFactorService;
+
+// Step 1: Get the authenticator configuration (includes secret key)
+const verificationRequest = await userVerificationService.buildRequest({
+  type: 'masterPassword',
+  secret: userMasterPassword
+});
+
+const config = await twoFactorService.getTwoFactorAuthenticator(verificationRequest);
+
+// Display QR code with config.key to user
+const qrCodeUrl = `otpauth://totp/Bitwarden:${userEmail}?secret=${config.key}&issuer=Bitwarden`;
+
+// Step 2: User scans QR code and provides token from authenticator app
+const updateRequest = new UpdateTwoFactorAuthenticatorRequest();
+updateRequest.masterPasswordHash = masterPasswordHash;
+updateRequest.token = '123456'; // From authenticator app
+
+const result = await twoFactorService.putTwoFactorAuthenticator(updateRequest);
+
+// Save recovery code
+console.log('Recovery code:', result.recoveryCode);
+```
+
+### Setting Up Email 2FA
+
+```typescript
+// Step 1: Request verification code
+const emailRequest = new TwoFactorEmailRequest();
+emailRequest.email = 'user@example.com';
+emailRequest.masterPasswordHash = masterPasswordHash;
+
+await twoFactorService.postTwoFactorEmailSetup(emailRequest);
+
+// Step 2: User receives code via email and provides it
+const updateRequest = new UpdateTwoFactorEmailRequest();
+updateRequest.email = 'user@example.com';
+updateRequest.token = '654321'; // Code from email
+updateRequest.masterPasswordHash = masterPasswordHash;
+
+const result = await twoFactorService.putTwoFactorEmail(updateRequest);
+```
+
+### Registering WebAuthn Security Key
+
+```typescript
+// Step 1: Get challenge
+const verificationRequest = await userVerificationService.buildRequest({
+  type: 'masterPassword',
+  secret: userMasterPassword
+});
+
+const challenge = await twoFactorService.getTwoFactorWebAuthnChallenge(verificationRequest);
+
+// Step 2: Create credential using browser WebAuthn API
+const credential = await navigator.credentials.create({
+  publicKey: challenge.credentialCreateOptions
+});
+
+// Step 3: Register credential
+const updateRequest = new UpdateTwoFactorWebAuthnRequest();
+updateRequest.deviceResponse = credential;
+updateRequest.name = 'My Security Key';
+updateRequest.masterPasswordHash = masterPasswordHash;
+
+const result = await twoFactorService.putTwoFactorWebAuthn(updateRequest);
+```
+
+### Disabling a Provider
+
+```typescript
+const disableRequest = new TwoFactorProviderRequest();
+disableRequest.type = TwoFactorProviderType.Email;
+disableRequest.masterPasswordHash = masterPasswordHash;
+
+await twoFactorService.putTwoFactorDisable(disableRequest);
+```
+
+### Organization Duo Setup
+
+```typescript
+const orgId = 'org-id-here';
+
+// Get current organization Duo config
+const verificationRequest = await userVerificationService.buildRequest({
+  type: 'masterPassword',
+  secret: userMasterPassword
+});
+
+const currentConfig = await twoFactorService.getTwoFactorOrganizationDuo(
+  orgId,
+  verificationRequest
+);
+
+// Update Duo configuration
+const updateRequest = new UpdateTwoFactorDuoRequest();
+updateRequest.clientId = 'duo_client_id';
+updateRequest.clientSecret = 'duo_client_secret';
+updateRequest.host = 'api-xxxxx.duosecurity.com';
+updateRequest.masterPasswordHash = masterPasswordHash;
+
+const result = await twoFactorService.putTwoFactorOrganizationDuo(orgId, updateRequest);
+```

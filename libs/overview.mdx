@@ -1,0 +1,218 @@
+---
+title: Core Libraries Overview
+description: Understanding the library architecture and shared code structure in Bitwarden Clients
+---
+
+The Bitwarden Clients codebase uses an Nx monorepo structure with a shared library architecture that enables code reuse across multiple client applications (Web, Desktop, Browser, CLI, and Mobile).
+
+## Library Architecture
+
+Bitwarden's core libraries are organized in the `libs/` directory and provide shared functionality that can be consumed by any client application. This architecture follows the principle of Domain-Driven Design (DDD) and separation of concerns.
+
+### Key Libraries
+
+<CardGroup cols={2}>
+  <Card title="Common Library" icon="box" href="/libs/common">
+    Platform abstractions, models, services, and business logic shared across all applications
+  </Card>
+  
+  <Card title="Angular Library" icon="angular" href="/libs/angular">
+    Shared Angular components, directives, pipes, and services for Angular-based clients
+  </Card>
+  
+  <Card title="Auth Library" icon="lock">
+    Authentication and authorization abstractions, services, and models
+  </Card>
+  
+  <Card title="Vault Library" icon="vault">
+    Vault-specific models, services, and cipher management functionality
+  </Card>
+  
+  <Card title="Admin Console" icon="users">
+    Organization and user management features for admin functionality
+  </Card>
+  
+  <Card title="Key Management" icon="key">
+    Cryptographic key management, encryption, and security services
+  </Card>
+  
+  <Card title="Platform Library" icon="server">
+    Platform-specific implementations and utilities
+  </Card>
+  
+  <Card title="Components Library" icon="palette">
+    Shared UI component library with design system components
+  </Card>
+</CardGroup>
+
+## Nx Workspace Structure
+
+The monorepo uses Nx to manage dependencies, builds, and tests across libraries and applications.
+
+### Path Mappings
+
+Libraries are imported using TypeScript path mappings defined in `tsconfig.base.json`:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@bitwarden/common/*": ["./libs/common/src/*"],
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/auth/common": ["./libs/auth/src/common"],
+      "@bitwarden/vault": ["./libs/vault/src"],
+      "@bitwarden/components": ["./libs/components/src"]
+    }
+  }
+}
+```
+
+### Library Project Configuration
+
+Each library has a `project.json` file that defines its Nx configuration:
+
+```json
+{
+  "name": "@bitwarden/common",
+  "sourceRoot": "libs/common/src",
+  "projectType": "library",
+  "tags": ["scope:common", "type:lib"],
+  "targets": {
+    "build": { "executor": "nx:run-script" },
+    "test": { "executor": "nx:run-script" },
+    "lint": { "executor": "@nx/eslint:lint" }
+  }
+}
+```
+
+## How Applications Consume Libraries
+
+### Import Pattern
+
+Applications import library code using the scoped package names:
+
+```typescript
+// Import from common library
+import { CipherService } from '@bitwarden/common/vault/abstractions/cipher.service';
+import { PlatformUtilsService } from '@bitwarden/common/platform/abstractions/platform-utils.service';
+
+// Import from Angular library
+import { JslibModule } from '@bitwarden/angular/jslib.module';
+import { IfFeatureDirective } from '@bitwarden/angular/directives/if-feature.directive';
+
+// Import from auth library
+import { AuthService } from '@bitwarden/auth/common';
+```
+
+### Dependency Injection
+
+Services from libraries are typically registered in the application's dependency injection container:
+
+```typescript
+// Example: Registering services in an Angular application
+import { CipherService } from '@bitwarden/common/vault/abstractions/cipher.service';
+import { DefaultCipherService } from '@bitwarden/common/vault/services/cipher.service';
+
+@NgModule({
+  providers: [
+    {
+      provide: CipherService,
+      useClass: DefaultCipherService
+    }
+  ]
+})
+export class AppModule {}
+```
+
+### Build Dependencies
+
+Nx automatically tracks dependencies between libraries and applications. When a library is modified, Nx rebuilds dependent projects:
+
+```bash
+# Build all libraries
+nx run-many --target=build --projects=@bitwarden/common,@bitwarden/angular
+
+# Test affected projects
+nx affected:test
+```
+
+## Library Organization Principles
+
+### Abstraction-First Design
+
+Libraries define abstract interfaces (abstractions) that concrete implementations follow:
+
+```typescript
+// libs/common/src/platform/abstractions/storage.service.ts
+export abstract class StorageService {
+  abstract get<T>(key: string): Promise<T>;
+  abstract set<T>(key: string, value: T): Promise<void>;
+  abstract remove(key: string): Promise<void>;
+}
+```
+
+### Domain Models
+
+Domain models encapsulate business logic and data transformations:
+
+```typescript
+// libs/common/src/vault/models/domain/cipher.ts
+export class Cipher extends Domain {
+  id: string;
+  name: EncString;
+  type: CipherType;
+  
+  async decrypt(key: SymmetricCryptoKey): Promise<CipherView> {
+    // Decryption logic
+  }
+}
+```
+
+### Platform-Specific Implementations
+
+Applications provide platform-specific implementations of abstractions:
+
+- **Browser**: Uses Chrome storage API
+- **Desktop**: Uses Electron storage
+- **Web**: Uses browser localStorage/sessionStorage
+- **CLI**: Uses file system storage
+
+## Shared Code Categories
+
+<CardGroup cols={2}>
+  <Card title="Abstractions" icon="code">
+    Abstract service interfaces that define contracts for implementations
+  </Card>
+  
+  <Card title="Models" icon="database">
+    Domain models, data models, view models, request/response models
+  </Card>
+  
+  <Card title="Services" icon="gear">
+    Concrete service implementations and business logic
+  </Card>
+  
+  <Card title="Enums & Types" icon="list">
+    Shared enumerations, type definitions, and constants
+  </Card>
+</CardGroup>
+
+## Testing Utilities
+
+The monorepo includes dedicated testing libraries:
+
+- **`@bitwarden/core-test-utils`**: Core testing utilities and helpers
+- **`@bitwarden/state-test-utils`**: State management testing utilities
+- **`@bitwarden/storage-test-utils`**: Storage service mocks and test helpers
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Common Library" icon="box" href="/libs/common">
+    Explore the common library structure and key abstractions
+  </Card>
+  
+  <Card title="Angular Library" icon="angular" href="/libs/angular">
+    Learn about shared Angular components and directives
+  </Card>
+</CardGroup>

@@ -1,0 +1,350 @@
+---
+title: Building the Browser Extension
+description: Build commands, browser targets, and development workflows for the browser extension
+---
+
+The browser extension uses webpack for bundling and supports building for multiple browsers and manifest versions.
+
+## Prerequisites
+
+Before building, ensure you have:
+
+- Node.js installed (version specified in root package.json)
+- Dependencies installed: `npm install` from the repository root
+
+## Build Commands
+
+All build commands are defined in `apps/browser/package.json`.
+
+### Development Builds
+
+Build for a specific browser in development mode:
+
+<CodeGroup>
+```bash Chrome
+npm run build:chrome
+```
+
+```bash Firefox
+npm run build:firefox
+```
+
+```bash Safari
+npm run build:safari
+```
+
+```bash Edge
+npm run build:edge
+```
+
+```bash Opera
+npm run build:opera
+```
+</CodeGroup>
+
+### Production Builds
+
+For production-ready builds with optimizations:
+
+<CodeGroup>
+```bash Chrome
+npm run build:prod:chrome
+```
+
+```bash Firefox
+npm run build:prod:firefox
+```
+
+```bash Safari
+npm run build:prod:safari
+```
+
+```bash Edge
+npm run build:prod:edge
+```
+
+```bash Opera
+npm run build:prod:opera
+```
+</CodeGroup>
+
+## Build Configuration
+
+### Environment Variables
+
+Builds are configured using environment variables:
+
+- `BROWSER` - Target browser (`chrome`, `firefox`, `safari`, `edge`, `opera`)
+- `MANIFEST_VERSION` - Manifest version (`2` or `3`)
+- `NODE_ENV` - Build mode (`development` or `production`)
+- `NODE_OPTIONS` - Node.js options (set to `--max-old-space-size=8192` for memory)
+
+### Example Build Command Breakdown
+
+Here's what happens when you run `npm run build:chrome`:
+
+```json
+"build:chrome": "cross-env BROWSER=chrome MANIFEST_VERSION=3 NODE_OPTIONS=\"--max-old-space-size=8192\" webpack"
+```
+
+<Steps>
+  <Step title="Set Environment Variables">
+    `cross-env` sets:
+    - `BROWSER=chrome` - Target Chrome browser
+    - `MANIFEST_VERSION=3` - Use Manifest V3
+    - `NODE_OPTIONS="--max-old-space-size=8192"` - Allocate 8GB RAM for build
+  </Step>
+  
+  <Step title="Run Webpack">
+    Webpack reads `webpack.config.js` which calls `buildConfig()` from `webpack.base.js`
+  </Step>
+  
+  <Step title="Generate Output">
+    Built extension files are written to `build/` directory with browser-specific manifests
+  </Step>
+</Steps>
+
+## Browser Targets
+
+### Chrome (Default)
+
+```bash
+# Development
+npm run build:chrome
+
+# Production
+npm run build:prod:chrome
+
+# Watch mode
+npm run build:watch:chrome
+```
+
+**Manifest Version:** V3 by default
+
+**Output:** `build/` directory with Chrome-compatible extension
+
+### Firefox
+
+```bash
+# Development (Manifest V2)
+npm run build:firefox
+
+# Development (Manifest V3)
+cross-env MANIFEST_VERSION=3 npm run build:firefox
+
+# Production
+npm run build:prod:firefox
+
+# Watch mode
+npm run build:watch:firefox
+```
+
+**Manifest Version:** V2 by default (V3 optional)
+
+**Special Notes:**
+- Uses `browser.*` namespace instead of `chrome.*`
+- Supports sidebar action
+- Android support available
+
+### Safari
+
+```bash
+# Development
+npm run build:safari
+
+# Production
+npm run build:prod:safari
+
+# Watch mode
+npm run build:watch:safari
+```
+
+**Manifest Version:** V2 by default, V3 optional
+
+**Special Requirements:**
+- Requires Xcode and Safari developer tools
+- Native app wrapper needed for distribution
+- Additional packaging step: `./scripts/package-safari.ps1`
+
+<Warning>
+Safari has unique tab query bugs. Always use `BrowserApi.tabsQueryFirstCurrentWindowForSafari()` when querying tabs in the current window to avoid getting tabs from other windows.
+</Warning>
+
+### Edge
+
+```bash
+# Development
+npm run build:edge
+
+# Production
+npm run build:prod:edge
+```
+
+**Manifest Version:** V3
+
+**Notes:** Uses same build as Chrome with Edge-specific branding
+
+### Opera
+
+```bash
+# Development
+npm run build:opera
+
+# Production
+npm run build:prod:opera
+```
+
+**Manifest Version:** V3
+
+**Notes:** Supports sidebar action like Firefox
+
+## Watch Mode for Development
+
+Watch mode automatically rebuilds when source files change:
+
+```bash
+# Chrome
+npm run build:watch:chrome
+
+# Firefox
+npm run build:watch:firefox
+
+# Safari
+npm run build:watch:safari
+```
+
+The watch mode:
+- Monitors source files for changes
+- Automatically rebuilds on save
+- Preserves build output in `build/` directory
+- Does NOT reload the extension in the browser (manual reload required)
+
+## Distribution Builds
+
+Create production builds packaged as ZIP files for distribution:
+
+<CodeGroup>
+```bash Chrome
+npm run dist:chrome
+```
+
+```bash Firefox
+npm run dist:firefox
+```
+
+```bash Safari
+npm run dist:safari
+```
+
+```bash Edge
+npm run dist:edge
+```
+
+```bash Opera
+npm run dist:opera
+```
+</CodeGroup>
+
+Distribution commands:
+1. Build production version
+2. Create `dist/` directory
+3. Compress to ZIP: `scripts/compress.sh dist-{browser}.zip`
+
+### Distribution Output
+
+ZIP files are created in the `dist/` directory:
+- `dist-chrome.zip` - Chrome Web Store
+- `dist-firefox.zip` - Firefox Add-ons
+- `dist-edge.zip` - Microsoft Edge Add-ons
+- `dist-opera.zip` - Opera Add-ons
+
+## Webpack Configuration
+
+The build system uses a modular webpack configuration:
+
+```javascript
+// webpack.config.js
+module.exports = buildConfig({
+  configName: "OSS",
+  popup: {
+    entry: path.resolve(__dirname, "src/popup/main.ts"),
+    entryModule: "src/popup/app.module#AppModule",
+  },
+  background: {
+    entry: path.resolve(__dirname, "src/platform/background.ts"),
+  },
+  tsConfig: "tsconfig.json",
+});
+```
+
+### Entry Points
+
+- **Popup:** `src/popup/main.ts` - Angular application for the extension popup
+- **Background:** `src/platform/background.ts` - Service worker entry point
+- **Content Scripts:** Configured in manifest, built separately
+
+## Loading in Browser for Testing
+
+After building, load the extension in your browser:
+
+<Steps>
+  <Step title="Build the Extension">
+    ```bash
+    npm run build:chrome
+    ```
+  </Step>
+  
+  <Step title="Open Extension Management">
+    - **Chrome:** Navigate to `chrome://extensions/`
+    - **Firefox:** Navigate to `about:debugging#/runtime/this-firefox`
+    - **Edge:** Navigate to `edge://extensions/`
+  </Step>
+  
+  <Step title="Enable Developer Mode">
+    Toggle "Developer mode" switch (Chrome/Edge) or click "Load Temporary Add-on" (Firefox)
+  </Step>
+  
+  <Step title="Load Unpacked Extension">
+    - Click "Load unpacked" (Chrome/Edge)
+    - Select the `apps/browser/build/` directory
+    - For Firefox, select any file in the `build/` directory
+  </Step>
+</Steps>
+
+## Common Build Issues
+
+### Out of Memory Errors
+
+If builds fail with out-of-memory errors:
+
+```bash
+# Increase Node.js memory limit
+export NODE_OPTIONS="--max-old-space-size=16384"
+npm run build:chrome
+```
+
+### TypeScript Errors
+
+Clear TypeScript cache:
+
+```bash
+rm -rf node_modules/.cache
+npm run build:chrome
+```
+
+### Manifest Version Conflicts
+
+Ensure the correct manifest version for your target browser:
+
+```bash
+# Chrome/Edge: Manifest V3 only
+npm run build:chrome
+
+# Firefox: Specify manifest version explicitly
+cross-env MANIFEST_VERSION=3 npm run build:firefox
+```
+
+## Next Steps
+
+- [Architecture](/apps/browser/architecture) - Understand the extension architecture
+- [Manifest V3](/apps/browser/manifest-v3) - Learn about Manifest V3 specifics

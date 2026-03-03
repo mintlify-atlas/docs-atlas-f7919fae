@@ -1,0 +1,601 @@
+---
+title: State Management
+description: Bitwarden's State Provider Framework for centralized application state management
+---
+
+# State Management
+
+The `@bitwarden/state` library provides a comprehensive State Provider Framework for centralized application state management across Bitwarden clients.
+
+## Overview
+
+The State Provider Framework was designed to:
+
+- **Enable domain ownership** - Teams own their state definitions
+- **Enforce best practices** - Reduce boilerplate and prevent common mistakes
+- **Support account switching** - Built-in multi-account support
+- **Provide trustworthy observables** - Reliable reactive state streams
+- **Simplify testing** - Comprehensive fake/mock implementations
+
+## Core Concepts
+
+### State Storage Locations
+
+State can be stored in two primary locations:
+
+- **Disk (`"disk"`)** - Persistent storage (survives app restarts)
+- **Memory (`"memory"`)** - In-memory cache (cleared on app restart)
+
+**Client-Specific Locations:**
+- Web: `"disk"` defaults to session storage, `"disk-local"` for local storage
+- Desktop/Browser: Platform-specific persistent storage
+
+### State Scopes
+
+- **Global State** - Application-wide state (not user-specific)
+- **User State** - State scoped to individual users
+- **Active User State** - State for currently active user (deprecated)
+- **Derived State** - Computed state based on other state
+
+## State Definitions
+
+### StateDefinition
+
+`StateDefinition` defines a storage location and top-level namespace.
+
+**Location:** Teams add entries to a central `state-definitions.ts` file
+
+```typescript
+import { StateDefinition } from "@bitwarden/state";
+
+// Disk storage
+export const MY_DOMAIN_DISK = new StateDefinition("myDomain", "disk");
+
+// Memory storage
+export const MY_DOMAIN_MEMORY = new StateDefinition("myDomain", "memory");
+
+// Web-specific: use local storage instead of session
+export const MY_DOMAIN_LOCAL = new StateDefinition(
+  "myDomain", 
+  "disk", 
+  { web: "disk-local" }
+);
+```
+
+**Important Rules:**
+- Use camelCase for state names
+- Names must be unique per storage location
+- Same name can be used for both disk and memory
+- **Never change** `StateDefinition` names for disk storage without migration
+
+### KeyDefinition and UserKeyDefinition
+
+`KeyDefinition` and `UserKeyDefinition` specify individual state elements.
+
+#### UserKeyDefinition (User-Scoped State)
+
+```typescript
+import { UserKeyDefinition } from "@bitwarden/state";
+import { MY_DOMAIN_DISK } from "./state-definitions";
+
+const VAULT_TIMEOUT = new UserKeyDefinition<number>(
+  MY_DOMAIN_DISK,
+  "vaultTimeout",
+  {
+    deserializer: (value) => value,
+    clearOn: ["logout"] // Clear on logout, lock, or both
+  }
+);
+```
+
+#### KeyDefinition (Global State)
+
+```typescript
+import { KeyDefinition } from "@bitwarden/state";
+
+const THEME_PREFERENCE = new KeyDefinition<string>(
+  MY_DOMAIN_DISK,
+  "theme",
+  {
+    deserializer: (value) => value
+  }
+);
+```
+
+#### Complex State with Deserializers
+
+```typescript
+class VaultSettings {
+  constructor(
+    public showHidden: boolean,
+    public sortBy: string,
+    public lastSync: Date
+  ) {}
+
+  static fromJSON(json: any): VaultSettings {
+    return new VaultSettings(
+      json.showHidden,
+      json.sortBy,
+      new Date(json.lastSync) // Convert string to Date
+    );
+  }
+}
+
+const VAULT_SETTINGS = new UserKeyDefinition<VaultSettings>(
+  MY_DOMAIN_DISK,
+  "settings",
+  {
+    deserializer: (json) => VaultSettings.fromJSON(json),
+    clearOn: ["logout"]
+  }
+);
+```
+
+#### Array and Record Helpers
+
+```typescript
+// Array state
+const MY_ITEMS = UserKeyDefinition.array<Item>(
+  MY_DOMAIN_DISK,
+  "items",
+  {
+    deserializer: (json) => Item.fromJSON(json)
+  },
+  {
+    clearOn: ["logout"]
+  }
+);
+
+// Record/Map state
+const MY_MAP = KeyDefinition.record<Value>(
+  MY_DOMAIN_DISK,
+  "map",
+  {
+    deserializer: (json) => Value.fromJSON(json)
+  }
+);
+```
+
+### Key Definition Options
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `deserializer` | Yes | Converts JSON to typed object |
+| `clearOn` | Yes (UserKeyDefinition) | When to clear state: `["logout"]`, `["lock"]`, both, or `[]` |
+| `cleanupDelayMs` | No | Delay before cleanup after last unsubscribe (default: 1000ms) |
+
+## State Provider
+
+`StateProvider` is the main service for accessing state.
+
+```typescript
+import { StateProvider } from "@bitwarden/state";
+
+export class MyService {
+  constructor(private stateProvider: StateProvider) {}
+}
+```
+
+### Getting State
+
+```typescript
+// Global state
+const globalState = this.stateProvider.getGlobal(THEME_PREFERENCE);
+
+// User state
+const userState = this.stateProvider.getUser(userId, VAULT_TIMEOUT);
+
+// Active user state (deprecated)
+const activeState = this.stateProvider.getActive(VAULT_TIMEOUT);
+
+// Derived state
+const derived = this.stateProvider.getDerived(
+  parentState$,
+  deriveDefinition,
+  dependencies
+);
+```
+
+### Alternative: Specific Providers
+
+For lighter dependencies, inject specific providers:
+
+```typescript
+import { 
+  SingleUserStateProvider,
+  GlobalStateProvider,
+  DerivedStateProvider
+} from "@bitwarden/state";
+
+export class MyService {
+  constructor(
+    private singleUserStateProvider: SingleUserStateProvider,
+    private globalStateProvider: GlobalStateProvider
+  ) {}
+
+  getUserState(userId: UserId) {
+    return this.singleUserStateProvider.get(userId, VAULT_TIMEOUT);
+  }
+}
+```
+
+## Working with State
+
+### GlobalState&lt;T&gt;
+
+```typescript
+interface GlobalState<T> {
+  state$: Observable<T | null>;
+  update(fn: (state: T) => T, options?: StateUpdateOptions): Promise<T>;
+}
+```
+
+### SingleUserState&lt;T&gt;
+
+```typescript
+interface SingleUserState<T> {
+  readonly userId: UserId;
+  state$: Observable<T | null>;
+  update(fn: (state: T) => T, options?: StateUpdateOptions): Promise<T>;
+}
+```
+
+### Reading State
+
+```typescript
+// Subscribe to state changes
+const state = this.stateProvider.getUser(userId, VAULT_SETTINGS);
+
+state.state$.subscribe(settings => {
+  console.log("Settings:", settings);
+});
+
+// Use in template with async pipe
+export class MyComponent {
+  settings$ = this.stateProvider.getUser(this.userId, VAULT_SETTINGS).state$;
+}
+```
+
+```html
+<div *ngIf="settings$ | async as settings">
+  Sort by: {{ settings.sortBy }}
+</div>
+```
+
+### Updating State
+
+```typescript
+// Simple update
+await state.update(current => ({ ...current, sortBy: "name" }));
+
+// Update with null handling
+await state.update(current => {
+  if (current == null) {
+    return new VaultSettings(false, "name", new Date());
+  }
+  return { ...current, sortBy: "name" };
+});
+
+// Return updated value
+const newValue = await state.update(current => ({ 
+  ...current, 
+  lastSync: new Date() 
+}));
+console.log("New value:", newValue);
+```
+
+### Update Options
+
+```typescript
+type StateUpdateOptions = {
+  shouldUpdate?: (state: T, dependency: TCombine) => boolean;
+  combineLatestWith?: Observable<TCombine>;
+  msTimeout?: number;
+};
+```
+
+#### shouldUpdate: Prevent Unnecessary Updates
+
+```typescript
+// Primitive values
+await state.update(
+  () => newValue,
+  {
+    shouldUpdate: (current) => current !== newValue
+  }
+);
+
+// Complex objects - custom equality
+await state.update(
+  () => newSettings,
+  {
+    shouldUpdate: (current) => !this.areEqual(current, newSettings)
+  }
+);
+
+areEqual(a: Settings | null, b: Settings | null): boolean {
+  if (a == null) return b == null;
+  if (b == null) return false;
+  
+  // Option 1: Full equality
+  return a.sortBy === b.sortBy && 
+         a.showHidden === b.showHidden &&
+         a.lastSync.getTime() === b.lastSync.getTime();
+  
+  // Option 2: Based on revision date
+  return a.id === b.id && 
+         a.revisionDate.getTime() === b.revisionDate.getTime();
+}
+```
+
+#### combineLatestWith: Conditional Updates
+
+```typescript
+await this.activeAccountIdState.update(
+  (_, accounts) => {
+    if (userId == null) {
+      return null;
+    }
+    if (accounts?.[userId] == null) {
+      throw new Error("Account does not exist");
+    }
+    return userId;
+  },
+  {
+    combineLatestWith: this.accounts$,
+    shouldUpdate: (id) => id !== userId
+  }
+);
+```
+
+## Derived State
+
+Derived state caches expensive computations based on other state.
+
+### DeriveDefinition
+
+```typescript
+import { DeriveDefinition } from "@bitwarden/state";
+import { MY_DOMAIN_MEMORY } from "./state-definitions";
+
+interface DecryptionDeps {
+  cryptoService: CryptoService;
+}
+
+const DECRYPTED_VAULTS = new DeriveDefinition<
+  EncryptedVault[],  // TFrom
+  DecryptedVault[],  // TTo
+  DecryptionDeps     // TDeps
+>(
+  MY_DOMAIN_MEMORY,
+  "decryptedVaults",
+  {
+    deserializer: (json) => json.map(v => DecryptedVault.fromJSON(v)),
+    derive: async (encrypted, deps) => {
+      return await Promise.all(
+        encrypted.map(v => deps.cryptoService.decrypt(v))
+      );
+    },
+    cleanupDelayMs: 5000 // Cache for 5 seconds after last subscriber
+  }
+);
+```
+
+### Using Derived State
+
+```typescript
+const encryptedVaults$ = this.stateProvider
+  .getUser(userId, ENCRYPTED_VAULTS)
+  .state$;
+
+const decryptedVaults$ = this.stateProvider.getDerived(
+  encryptedVaults$,
+  DECRYPTED_VAULTS,
+  { cryptoService: this.cryptoService }
+).state$;
+
+// Subscribe to derived state
+decryptedVaults$.subscribe(vaults => {
+  console.log("Decrypted:", vaults);
+});
+```
+
+### Force Derived Value
+
+Useful for clearing derived state during logout:
+
+```typescript
+const derivedState = this.stateProvider.getDerived(...);
+
+// Force to null during logout
+await derivedState.forceValue(null);
+```
+
+## State Migrations
+
+Migrate data when changing state definitions or structure.
+
+### Creating a Migration
+
+**Location:** `libs/state/src/state-migrations/migrations/`
+
+```typescript
+import { Migrator, MigrationHelper } from "@bitwarden/state";
+
+export class MoveCipherDataMigrator extends Migrator<56, 57> {
+  async migrate(helper: MigrationHelper): Promise<void> {
+    // Get old data
+    const oldData = await helper.get<OldType>("oldKey");
+    
+    // Transform data
+    const newData = this.transform(oldData);
+    
+    // Set new data using KeyDefinition
+    await helper.setToUser(userId, NEW_KEY_DEFINITION, newData);
+    
+    // Remove old data
+    await helper.remove("oldKey");
+  }
+  
+  async rollback(helper: MigrationHelper): Promise<void> {
+    // Reverse migration if needed
+  }
+}
+```
+
+### Migration Best Practices
+
+1. **Never skip migrations** - Run all migrations in order
+2. **Test thoroughly** - Migrations are irreversible
+3. **Use KeyDefinitionLike** - Avoid importing from application code
+4. **Handle null data** - Users may not have data to migrate
+
+## Why Not ActiveUserState?
+
+`ActiveUserState` is deprecated due to race condition issues.
+
+### Problem: Account Switching Race Condition
+
+```typescript
+// BAD: Race condition
+const folders = await firstValueFrom(this.folderState.state$);
+folders[folderId].name = newName;
+await this.folderState.update(() => folders);
+// If user switches accounts between read and write,
+// user A's data gets written to user B's state!
+```
+
+### Solution: Use SingleUserState
+
+```typescript
+// GOOD: Explicit user ID
+async renameFolder(userId: UserId, folderId: string, newName: string) {
+  const state = this.stateProvider.getUser(userId, FOLDERS);
+  await state.update(folders => {
+    folders[folderId].name = newName;
+    return folders;
+  });
+}
+```
+
+### Benefits of SingleUserState
+
+1. **No race conditions** - Operations always target same user
+2. **Flexible API** - Can query any user's data
+3. **Better account switching** - Clean transitions with `switchMap`
+
+```typescript
+// Clean account switching
+const view$ = this.accountService.activeAccount$.pipe(
+  switchMap(account => {
+    if (account == null) {
+      throw new Error("No active user");
+    }
+    
+    return combineLatest([
+      this.folderService.userFolders$(account.id),
+      this.cipherService.userCiphers$(account.id)
+    ]);
+  }),
+  map(([folders, ciphers]) => this.buildView(folders, ciphers))
+);
+```
+
+## Testing
+
+### Fake State Provider
+
+```typescript
+import { FakeStateProvider } from "@bitwarden/state-test-utils";
+
+describe("MyService", () => {
+  let stateProvider: FakeStateProvider;
+  let service: MyService;
+  
+  beforeEach(() => {
+    stateProvider = new FakeStateProvider();
+    service = new MyService(stateProvider);
+  });
+  
+  it("should update state", async () => {
+    const state = stateProvider.singleUser.getFake(userId, VAULT_TIMEOUT);
+    
+    // Set initial value
+    state.nextState(5);
+    
+    // Test service
+    await service.setVaultTimeout(userId, 10);
+    
+    // Assert
+    expect(await firstValueFrom(state.state$)).toBe(10);
+  });
+});
+```
+
+## Best Practices
+
+### State Definition
+
+1. **Choose appropriate storage:**
+   - Disk for persistent data
+   - Memory for caches/computed data
+
+2. **Set proper `clearOn` events:**
+   - `["logout"]` for sensitive data
+   - `["lock", "logout"]` for very sensitive data
+   - `[]` for settings that survive logout
+
+3. **Write good deserializers:**
+   - Handle `null` and `undefined`
+   - Convert dates/complex types correctly
+   - Test edge cases
+
+### State Updates
+
+1. **Use `shouldUpdate` when possible:**
+   - Reduces unnecessary I/O
+   - Prevents redundant observable emissions
+
+2. **Avoid `firstValueFrom()` after updates:**
+   - Use return value from `update()`
+   - Or stay in reactive observable world
+
+3. **Handle `null` in update functions:**
+   - State can be `null` or `undefined`
+   - Provide defaults when needed
+
+### Observable Patterns
+
+1. **Don't leave reactivity:**
+   - Propagate observables through your app
+   - Use `async` pipe in templates
+   - Avoid premature subscription
+
+2. **Clean account switching:**
+   - Use `switchMap` with `activeAccount$`
+   - Combine streams with same user ID
+
+## Related Libraries
+
+- **@bitwarden/state-internal** - Internal state implementation (do not use directly)
+- **@bitwarden/state-test-utils** - Testing utilities
+- **@bitwarden/storage-core** - Storage service implementations
+- [Platform Library](/libs/platform) - Storage abstractions
+
+## State Architecture Diagram
+
+See `libs/state/state_diagram.svg` for visual architecture overview.
+
+## Source Code
+
+- **State Library:** `libs/state/`
+- **State Internal:** `libs/state-internal/`
+- **State Migrations:** `libs/state/src/state-migrations/migrations/`
+- **Storage Core:** `libs/storage-core/`
+- **Test Utils:** `libs/state-test-utils/`
+
+## Additional Resources
+
+- [State README](https://github.com/bitwarden/clients/blob/main/libs/state/README.md)
+- [Platform Library](/libs/platform)
+- [Development Guide](/development)

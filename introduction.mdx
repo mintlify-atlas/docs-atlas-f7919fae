@@ -1,0 +1,199 @@
+---
+title: Introduction
+description: Welcome to the Bitwarden Clients documentation - a comprehensive guide to the monorepo housing all Bitwarden client applications
+---
+
+<img
+  src="https://raw.githubusercontent.com/bitwarden/brand/main/screenshots/apps-combo-logo.png"
+  alt="Bitwarden"
+/>
+
+# Welcome to Bitwarden Clients
+
+The Bitwarden Clients repository is a monorepo that houses all Bitwarden client applications except mobile (iOS and Android). Built with TypeScript, Angular, and modern web technologies, this repository provides a unified development experience across multiple platforms.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Monorepo architecture" icon="folder-tree">
+    Nx-powered workspace with shared libraries and consistent tooling across all client applications
+  </Card>
+  <Card title="TypeScript first" icon="code">
+    Fully typed codebase with strict TypeScript configuration for enhanced developer experience
+  </Card>
+  <Card title="Shared component library" icon="layer-group">
+    Reusable UI components and business logic libraries reduce duplication across apps
+  </Card>
+  <Card title="Modern build tools" icon="gear">
+    Webpack, Nx, and platform-specific bundlers optimized for each application type
+  </Card>
+</CardGroup>
+
+## Client applications
+
+The repository includes four main client applications, each designed for specific platforms and use cases:
+
+<CardGroup cols={2}>
+  <Card title="Browser extension" icon="puzzle-piece" href="#browser-extension">
+    Cross-browser extension for Chrome, Firefox, Safari, Edge, Opera, and more
+  </Card>
+  <Card title="Desktop application" icon="desktop" href="#desktop-application">
+    Native desktop app for Windows, macOS, and Linux built with Electron
+  </Card>
+  <Card title="Web vault" icon="globe" href="#web-vault">
+    Angular web application powering vault.bitwarden.com
+  </Card>
+  <Card title="CLI" icon="terminal" href="#command-line-interface">
+    Full-featured command-line interface for automation and scripting
+  </Card>
+</CardGroup>
+
+### Browser extension
+
+**Version:** 2026.2.0  
+**Technologies:** Web Extension API (Manifest V3), Angular, TypeScript  
+**Platforms:** Chrome, Firefox, Safari, Edge, Opera, Brave, Vivaldi, Tor Browser
+
+The browser extension provides seamless password management directly in your browser with autofill capabilities, password generation, and secure vault access.
+
+**Build command:**
+```bash
+npm run build:chrome  # or firefox, safari, edge, opera
+```
+
+### Desktop application
+
+**Version:** 2026.2.1  
+**Technologies:** Electron, Angular, TypeScript, Rust (native modules)  
+**Platforms:** Windows (x64, x86, ARM64), macOS (Universal), Linux (x64, ARM64)
+
+The desktop application combines native OS integration with the full power of Bitwarden's web vault in a standalone application.
+
+**Build command:**
+```bash
+npm run build  # Builds main, renderer, and preload
+```
+
+### Web vault
+
+**Version:** 2026.2.1  
+**Technologies:** Angular, TypeScript, Webpack  
+**Deployment:** Cloud-hosted and self-hosted options
+
+The web vault is the central web application accessible at vault.bitwarden.com, providing comprehensive vault management, organization administration, and enterprise features.
+
+**Build command:**
+```bash
+npm run build:oss  # Open source build
+npm run build:bit  # Commercial build
+```
+
+### Command-line interface
+
+**Version:** 2026.2.0  
+**Technologies:** Node.js, TypeScript, Commander.js  
+**Platforms:** Windows, macOS, Linux (x64 and ARM64)
+
+The CLI provides a powerful, scriptable interface to Bitwarden with full vault management, ideal for automation, CI/CD pipelines, and server environments.
+
+**Build command:**
+```bash
+npm run build:oss  # Builds to build/bw.js
+```
+
+## Technology stack
+
+- **TypeScript 5.8.3** - Type-safe development across all applications
+- **Angular 20.3.17** - Modern framework for browser, desktop, and web
+- **Nx 21.6.10** - Monorepo tooling and build orchestration
+- **RxJS 7.8.1** - Reactive programming patterns
+- **Webpack 5** - Module bundling and optimization
+- **Jest** - Unit and integration testing
+- **ESLint** - Code quality and consistency
+
+## Quick start guides
+
+<CardGroup cols={2}>
+  <Card title="Browser extension" icon="puzzle-piece" href="/apps/browser/overview">
+    Get started building the browser extension
+  </Card>
+  <Card title="Desktop app" icon="desktop" href="/apps/desktop/overview">
+    Get started building the desktop application
+  </Card>
+  <Card title="Web vault" icon="globe" href="/apps/web/overview">
+    Get started building the web vault
+  </Card>
+  <Card title="CLI" icon="terminal" href="/apps/cli/overview">
+    Get started building the command-line interface
+  </Card>
+  <Card title="Desktop app" icon="desktop" href="/quickstart/desktop">
+    Build and run the desktop application
+  </Card>
+  <Card title="Web vault" icon="globe" href="/quickstart/web">
+    Launch the web vault locally
+  </Card>
+  <Card title="CLI" icon="terminal" href="/quickstart/cli">
+    Build and use the command-line interface
+  </Card>
+</CardGroup>
+
+## Requirements
+
+<Info>
+  All applications share common requirements defined in the root package.json:
+  - **Node.js:** >= 22.12.0 (specified in .nvmrc: v22)
+  - **npm:** ~10
+</Info>
+
+Platform-specific requirements vary by application. See [System Requirements](/setup/requirements) for detailed information.
+
+## Repository structure
+
+```
+bitwarden/clients/
+├── apps/
+│   ├── browser/          # Browser extension
+│   ├── cli/              # Command-line interface
+│   ├── desktop/          # Desktop application
+│   └── web/              # Web vault
+├── libs/                 # Shared libraries
+│   ├── angular/          # Angular utilities
+│   ├── auth/             # Authentication
+│   ├── common/           # Core business logic
+│   ├── components/       # Shared UI components
+│   ├── platform/         # Platform abstractions
+│   ├── vault/            # Vault functionality
+│   └── tools/            # Generator, send, export
+├── bitwarden_license/    # Commercial features
+└── scripts/              # Build and automation scripts
+```
+
+## Next steps
+
+<Steps>
+  <Step title="Review architecture">
+    Learn about the [monorepo structure](/architecture) and how apps and libraries interact
+  </Step>
+  <Step title="Set up your environment">
+    Follow the [installation guide](/setup/installation) to clone and install dependencies
+  </Step>
+  <Step title="Build an application">
+    Choose an app and follow its [build instructions](/setup/building)
+  </Step>
+  <Step title="Start contributing">
+    Read the [contributing guide](/contributing) and join the community
+  </Step>
+</Steps>
+
+## Community and support
+
+- **Contributing Guide:** [contributing.bitwarden.com](https://contributing.bitwarden.com/)
+- **GitHub Issues:** [github.com/bitwarden/clients/issues](https://github.com/bitwarden/clients/issues)
+- **Gitter Chat:** [gitter.im/bitwarden/Lobby](https://gitter.im/bitwarden/Lobby)
+- **Security:** See [SECURITY.md](https://github.com/bitwarden/clients/blob/main/SECURITY.md) for reporting vulnerabilities
+
+<Note>
+  This repository does not include the mobile applications. For iOS and Android development, see:
+  - [bitwarden/ios](https://github.com/bitwarden/ios)
+  - [bitwarden/android](https://github.com/bitwarden/android)
+</Note>

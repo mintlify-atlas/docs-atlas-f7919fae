@@ -1,0 +1,611 @@
+---
+title: Building applications
+description: Build commands and workflows for each Bitwarden client application
+---
+
+# Building applications
+
+This guide covers how to build each Bitwarden client application, including development builds, production builds, and watch mode for active development.
+
+<Info>
+  Before building, ensure you've completed the [installation](/setup/installation) steps and have all dependencies installed.
+</Info>
+
+## Using Nx
+
+The repository uses Nx for build orchestration. While each app has npm scripts, you can also use Nx directly:
+
+```bash
+# Build using Nx
+npx nx build browser
+npx nx build desktop
+npx nx build web
+npx nx build cli
+
+# Build only affected projects (after changes)
+npx nx affected:build
+
+# View dependency graph
+npx nx graph
+```
+
+<Note>
+  Nx caches build outputs. If you need a clean build, use `npx nx reset` to clear the cache.
+</Note>
+
+## Browser extension
+
+The browser extension must be built for each target browser.
+
+### Development builds
+
+<Tabs>
+  <Tab title="Chrome">
+    Build for Chrome and Chromium-based browsers:
+    
+    ```bash
+    cd apps/browser
+    npm run build:chrome
+    ```
+    
+    **Output:** `apps/browser/build/`
+    
+    **Load in Chrome:**
+    1. Navigate to `chrome://extensions/`
+    2. Enable "Developer mode"
+    3. Click "Load unpacked"
+    4. Select the `build/` directory
+  </Tab>
+  
+  <Tab title="Firefox">
+    Build for Firefox:
+    
+    ```bash
+    cd apps/browser
+    npm run build:firefox
+    ```
+    
+    **Output:** `apps/browser/build/`
+    
+    **Load in Firefox:**
+    1. Navigate to `about:debugging#/runtime/this-firefox`
+    2. Click "Load Temporary Add-on"
+    3. Select `manifest.json` from the `build/` directory
+  </Tab>
+  
+  <Tab title="Safari">
+    Build for Safari:
+    
+    ```bash
+    cd apps/browser
+    npm run build:safari
+    ```
+    
+    **Output:** `apps/browser/build/`
+    
+    **Convert to Safari extension:**
+    1. Use Xcode to create Safari Web Extension
+    2. Point to the `build/` directory
+    3. Build and run from Xcode
+  </Tab>
+  
+  <Tab title="Edge">
+    Build for Microsoft Edge:
+    
+    ```bash
+    cd apps/browser
+    npm run build:edge
+    ```
+    
+    **Output:** `apps/browser/build/`
+    
+    Load using the same process as Chrome.
+  </Tab>
+  
+  <Tab title="Opera">
+    Build for Opera:
+    
+    ```bash
+    cd apps/browser
+    npm run build:opera
+    ```
+    
+    **Output:** `apps/browser/build/`
+  </Tab>
+</Tabs>
+
+### Watch mode
+
+For active development, use watch mode to automatically rebuild on file changes:
+
+```bash
+cd apps/browser
+
+# Watch mode for Chrome
+npm run build:watch:chrome
+
+# Watch mode for Firefox
+npm run build:watch:firefox
+
+# Watch mode for Safari
+npm run build:watch:safari
+```
+
+<Note>
+  After the extension rebuilds, you'll need to reload it in your browser (click the reload button in the extensions page).
+</Note>
+
+### Production builds
+
+Production builds are optimized and minified:
+
+```bash
+cd apps/browser
+
+# Production build for Chrome
+npm run build:prod:chrome
+
+# Production build for Firefox
+npm run build:prod:firefox
+
+# Production build for Safari
+npm run build:prod:safari
+```
+
+### Distribution packages
+
+Create distributable packages:
+
+```bash
+cd apps/browser
+
+# Create .zip for Chrome Web Store
+npm run dist:chrome
+# Output: apps/browser/dist/dist-chrome.zip
+
+# Create .zip for Firefox Add-ons
+npm run dist:firefox
+# Output: apps/browser/dist/dist-firefox.zip
+
+# Package Safari extension
+npm run dist:safari
+```
+
+### Build configuration
+
+Builds use environment variables:
+
+- `BROWSER=chrome|firefox|safari|edge|opera` - Target browser
+- `MANIFEST_VERSION=3` - Manifest version (Chrome uses MV3)
+- `NODE_ENV=production` - Production optimization
+- `NODE_OPTIONS="--max-old-space-size=8192"` - Allocate 8GB for build
+
+## Desktop application
+
+The desktop app requires building three components: main process, renderer process, and preload scripts.
+
+### Development build
+
+**Build all components:**
+
+```bash
+cd apps/desktop
+npm run build:dev
+```
+
+This runs three builds in parallel:
+- `build:main:dev` - Main process (Electron)
+- `build:renderer:dev` - Renderer process (Angular)
+- `build:preload:dev` - Preload scripts
+
+**Output:** `apps/desktop/build/`
+
+### Run the application
+
+After building:
+
+```bash
+cd apps/desktop
+npm run electron
+```
+
+**Or run with certificate errors ignored (for local testing):**
+
+```bash
+npm run electron:ignore
+```
+
+### Watch mode
+
+For active development, run watch mode in separate terminals:
+
+```bash
+# Terminal 1: Watch main process
+cd apps/desktop
+npm run build:main:watch
+
+# Terminal 2: Watch renderer process
+npm run build:renderer:watch
+
+# Terminal 3: Watch preload scripts
+npm run build:preload:watch
+
+# Terminal 4: Run Electron with auto-reload
+npm run electron
+```
+
+<Info>
+  The desktop app uses `electron-reload` to automatically restart when files change.
+</Info>
+
+### Production build
+
+Production builds with optimization:
+
+```bash
+cd apps/desktop
+npm run build
+```
+
+This builds all three components in production mode.
+
+### Platform packages
+
+Create distributable packages for each platform:
+
+<Tabs>
+  <Tab title="Windows">
+    ```bash
+    cd apps/desktop
+    
+    # Build installer and portable
+    npm run dist:win
+    
+    # Output:
+    # - apps/desktop/dist/Bitwarden-Setup-{version}.exe
+    # - apps/desktop/dist/Bitwarden-Portable-{version}.exe
+    ```
+    
+    Creates installers for x64, x86, and ARM64.
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    cd apps/desktop
+    
+    # Build universal .dmg
+    npm run dist:mac
+    
+    # Output:
+    # - apps/desktop/dist/Bitwarden-{version}-universal.dmg
+    
+    # With macOS extension (autofill)
+    npm run pack:mac:with-extension
+    
+    # For Mac App Store
+    npm run dist:mac:mas
+    ```
+    
+    Creates universal binaries (x64 + ARM64).
+  </Tab>
+  
+  <Tab title="Linux">
+    ```bash
+    cd apps/desktop
+    
+    # Build AppImage, .deb, snap
+    npm run dist:lin
+    
+    # Output:
+    # - apps/desktop/dist/Bitwarden-{version}-x64.AppImage
+    # - apps/desktop/dist/bitwarden_{version}_amd64.deb
+    # - apps/desktop/dist/bitwarden_{version}_amd64.snap
+    
+    # ARM64 build
+    npm run dist:lin:arm64
+    ```
+  </Tab>
+</Tabs>
+
+### Native modules
+
+The desktop app includes Rust native modules:
+
+```bash
+cd apps/desktop
+
+# Build native modules
+npm run build-native
+
+# macOS autofill provider (macOS only)
+npm run build-native-macos
+```
+
+## Web vault
+
+The web vault can be built as open source (OSS) or commercial (bit).
+
+### Development build
+
+**Open source build:**
+
+```bash
+cd apps/web
+npm run build:oss
+```
+
+**Commercial build:**
+
+```bash
+cd apps/web
+npm run build:bit
+```
+
+**Output:** `apps/web/build/`
+
+### Development server
+
+Run with live reload:
+
+```bash
+cd apps/web
+
+# OSS development server
+npm run build:oss:watch
+
+# Commercial development server
+npm run build:bit:dev:watch
+```
+
+**Access at:** `http://localhost:8080`
+
+<Info>
+  The dev server includes hot module replacement for faster development.
+</Info>
+
+### Production builds
+
+Optimized builds for different environments:
+
+<CodeGroup>
+
+```bash Self-hosted
+# Open source self-hosted
+npm run build:oss:selfhost:prod
+
+# Commercial self-hosted
+npm run build:bit:selfhost:prod
+
+# Output: apps/web/build/
+```
+
+```bash Cloud environments
+# QA environment
+npm run build:bit:qa
+
+# EU production
+npm run build:bit:euprd
+
+# US cloud
+npm run build:bit:cloud
+```
+
+</CodeGroup>
+
+### Environment configuration
+
+Builds use environment variables:
+
+- `ENV=development|qa|production|selfhosted|cloud`
+- `NODE_ENV=production` - Enable production optimization
+- `NODE_OPTIONS="--max-old-space-size=8192"` - Memory allocation
+
+## Command-line interface
+
+The CLI can be built as a Node.js script or packaged as a native executable.
+
+### Development build
+
+```bash
+cd apps/cli
+npm run build:oss
+```
+
+**Output:** `apps/cli/build/bw.js`
+
+**Run the CLI:**
+
+```bash
+node build/bw.js --help
+```
+
+### Watch mode
+
+```bash
+cd apps/cli
+npm run build:oss:watch
+```
+
+Automatically rebuilds on file changes.
+
+### Production build
+
+```bash
+cd apps/cli
+npm run build:oss:prod
+```
+
+Optimized and minified output.
+
+### Native executables
+
+Create standalone binaries with no Node.js requirement:
+
+<Tabs>
+  <Tab title="Windows">
+    ```bash
+    cd apps/cli
+    npm run dist:oss:win
+    
+    # Output: apps/cli/dist/oss/windows/bw.exe
+    ```
+    
+    Creates a standalone .exe (x64).
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    cd apps/cli
+    
+    # x64 build
+    npm run dist:oss:mac
+    # Output: apps/cli/dist/oss/macos/bw
+    
+    # ARM64 build
+    npm run dist:oss:mac-arm64
+    # Output: apps/cli/dist/oss/macos-arm64/bw
+    ```
+  </Tab>
+  
+  <Tab title="Linux">
+    ```bash
+    cd apps/cli
+    
+    # x64 build
+    npm run dist:oss:lin
+    # Output: apps/cli/dist/oss/linux/bw
+    
+    # ARM64 build
+    npm run dist:oss:lin-arm64
+    # Output: apps/cli/dist/oss/linux-arm64/bw
+    ```
+  </Tab>
+</Tabs>
+
+Native executables are created using `@yao-pkg/pkg`.
+
+### Debug mode
+
+Run with Node.js inspector:
+
+```bash
+cd apps/cli
+npm run build:oss:debug
+
+# Or debug after building
+npm run debug
+```
+
+Attach a debugger on `chrome://inspect` or VS Code.
+
+## Build optimization
+
+### Parallel builds
+
+Build multiple apps simultaneously using Nx:
+
+```bash
+# Build all apps
+npx nx run-many --target=build --all
+
+# Build specific apps
+npx nx run-many --target=build --projects=browser,desktop
+```
+
+### Incremental builds
+
+Nx caches build outputs. Subsequent builds are much faster:
+
+```bash
+# First build: ~5 minutes
+npx nx build browser
+
+# Cached build: ~1 second
+npx nx build browser
+
+# Clear cache if needed
+npx nx reset
+```
+
+### Build only changed projects
+
+```bash
+# Build only projects affected by your changes
+npx nx affected:build --base=main
+
+# See what would be built
+npx nx affected:build --base=main --dry-run
+```
+
+## Troubleshooting
+
+### Build fails with memory errors
+
+**Browser/Web builds already allocate 8GB:**
+
+```bash
+# If still failing, manually increase:
+export NODE_OPTIONS="--max-old-space-size=12288"
+npm run build
+```
+
+### TypeScript errors
+
+```bash
+# Check TypeScript version
+npx tsc --version  # Should be 5.8.3
+
+# Clean and rebuild
+rm -rf build dist
+npm run build
+```
+
+### Webpack cache issues
+
+```bash
+# Clear webpack cache
+rm -rf node_modules/.cache
+
+# Rebuild
+npm run build
+```
+
+### Native module errors (Desktop)
+
+```bash
+cd apps/desktop
+
+# Rebuild Electron native modules
+npm run postinstall
+
+# Or manually
+npx electron-rebuild
+```
+
+### Permission errors on build output
+
+```bash
+# Make output directories writable
+chmod -R u+w build dist
+
+# Remove and rebuild
+rm -rf build dist
+npm run build
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing">
+    Learn the development workflow
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the codebase structure
+  </Card>
+  <Card title="Requirements" icon="list-check" href="/setup/requirements">
+    Platform-specific requirements
+  </Card>
+  <Card title="Testing" icon="flask" href="/guide/testing/unit-tests">
+    Run tests and write new ones
+  </Card>
+</CardGroup>

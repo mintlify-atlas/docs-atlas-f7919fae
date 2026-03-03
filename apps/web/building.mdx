@@ -1,0 +1,293 @@
+---
+title: Building the Web Vault
+description: Build commands and development server setup for the web vault
+---
+
+The Bitwarden Web Vault uses Webpack for building and serving the application. Build scripts are defined in `apps/web/package.json` and support multiple environment configurations.
+
+## Prerequisites
+
+Before building the web vault, ensure you have:
+
+- Node.js (version specified in root `package.json`)
+- npm or yarn
+- Dependencies installed via `npm install` from the repository root
+
+## Development Builds
+
+### Development Server
+
+For local development with hot reload:
+
+**OSS (Open Source) Version:**
+```bash
+npm run build:oss:watch
+```
+
+This runs:
+```bash
+webpack serve
+```
+
+**Commercial Version:**
+```bash
+npm run build:bit:dev:watch
+```
+
+This runs:
+```bash
+cross-env ENV=development NODE_OPTIONS="--max-old-space-size=8192" npm run build:bit:watch
+```
+
+The `NODE_OPTIONS` flag increases memory allocation to 8GB for large builds.
+
+### Self-Hosted Development
+
+**OSS Self-Hosted:**
+```bash
+npm run build:oss:selfhost:watch
+```
+
+Equivalent to:
+```bash
+cross-env ENV=selfhosted webpack serve
+```
+
+**Commercial Self-Hosted:**
+```bash
+npm run build:bit:selfhost:watch
+```
+
+Equivalent to:
+```bash
+cross-env ENV=selfhosted webpack serve -c ../../bitwarden_license/bit-web/webpack.config.js
+```
+
+## Production Builds
+
+### Cloud Environments
+
+**Production Cloud (US):**
+```bash
+npm run build:bit:cloud
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=cloud npm run build:bit
+```
+
+**QA Environment:**
+```bash
+npm run build:bit:qa
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=qa npm run build:bit
+```
+
+**EU Production:**
+```bash
+npm run build:bit:euprd
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=euprd npm run build:bit
+```
+
+**EU QA:**
+```bash
+npm run build:bit:euqa
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=euqa npm run build:bit
+```
+
+**US Development:**
+```bash
+npm run build:bit:usdev
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=usdev npm run build:bit
+```
+
+**Enterprise Edition:**
+```bash
+npm run build:bit:ee
+```
+
+Runs:
+```bash
+cross-env NODE_ENV=production ENV=ee npm run build:bit
+```
+
+### Self-Hosted Production
+
+**OSS Self-Hosted Production:**
+```bash
+npm run build:oss:selfhost:prod
+```
+
+Runs:
+```bash
+cross-env ENV=selfhosted NODE_ENV=production webpack
+```
+
+**Commercial Self-Hosted Production:**
+```bash
+npm run build:bit:selfhost:prod
+```
+
+Runs:
+```bash
+cross-env ENV=selfhosted NODE_ENV=production npm run build:bit
+```
+
+## Distribution Builds
+
+For creating distribution artifacts:
+
+**Cloud Distribution:**
+```bash
+npm run dist:bit:cloud
+```
+
+**OSS Self-Hosted Distribution:**
+```bash
+npm run dist:oss:selfhost
+```
+
+**Commercial Self-Hosted Distribution:**
+```bash
+npm run dist:bit:selfhost
+```
+
+## Build Configuration
+
+### Webpack Configurations
+
+The web vault uses different webpack configurations:
+
+**OSS Configuration:**
+- File: `apps/web/webpack.config.js`
+- Entry: `apps/web/src/main.ts`
+- Module: `src/app/app.module#AppModule`
+
+**Commercial Configuration:**
+- File: `bitwarden_license/bit-web/webpack.config.js`
+- Entry: Same as OSS but with commercial features
+- Module: Extended AppModule with enterprise features
+
+### Base Configuration
+
+Both configurations extend from `apps/web/webpack.base.js`, which:
+
+- Handles environment variable injection via `config.js`
+- Configures loaders for TypeScript, SCSS, HTML, and assets
+- Sets up Angular compilation with `@ngtools/webpack`
+- Manages code splitting and optimization
+
+### Environment Variables
+
+Builds are controlled by two environment variables:
+
+**`ENV`**: Deployment environment
+- `development` - Local development
+- `selfhosted` - Self-hosted deployments
+- `cloud` - US production cloud
+- `qa` - QA environment
+- `euprd` - EU production
+- `euqa` - EU QA
+- `usdev` - US development
+- `ee` - Enterprise edition
+
+**`NODE_ENV`**: Build mode
+- `development` - Development build (source maps, no minification)
+- `production` - Production build (minified, optimized)
+
+## Build Analysis
+
+To analyze bundle size and composition:
+
+```bash
+npm run build:bit:dev:analyze
+```
+
+This runs:
+```bash
+cross-env LOGGING=false webpack -c ../../bitwarden_license/bit-web/webpack.config.js --profile --json > stats.json && npx webpack-bundle-analyzer stats.json build/
+```
+
+The command:
+1. Builds the application with profiling enabled
+2. Outputs statistics to `stats.json`
+3. Opens an interactive bundle analyzer in your browser
+
+## Testing
+
+**Run Tests:**
+```bash
+npm test
+```
+
+Runs Jest test suite once.
+
+**Watch Mode:**
+```bash
+npm run test:watch
+```
+
+Runs tests in watch mode for files you've changed.
+
+**Watch All:**
+```bash
+npm run test:watch:all
+```
+
+Runs all tests in watch mode.
+
+## Build Output
+
+By default, builds output to:
+- **Directory**: `apps/web/build/`
+- **Entry Point**: `index.html`
+- **Assets**: Fonts, images, compiled CSS and JS bundles
+
+The output structure includes:
+```
+build/
+├── index.html
+├── main.[hash].js
+├── polyfills.[hash].js
+├── runtime.[hash].js
+├── styles.[hash].css
+├── fonts/
+└── images/
+```
+
+## Common Issues
+
+### Memory Issues
+
+If you encounter out-of-memory errors during builds:
+
+```bash
+# Increase Node.js memory limit
+NODE_OPTIONS="--max-old-space-size=8192" npm run build:bit
+```
+
+The development watch scripts already include this flag.
+
+### Port Conflicts
+
+Webpack serve uses default port 8080. If the port is in use, webpack will automatically try the next available port.
+
+### Environment Configuration
+
+Environment configurations are loaded from `apps/web/config.js` based on the `ENV` variable. Ensure your target environment is properly configured in this file.

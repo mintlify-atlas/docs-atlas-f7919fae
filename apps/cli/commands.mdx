@@ -1,0 +1,1235 @@
+---
+title: CLI Commands Reference
+description: Complete reference for all Bitwarden CLI commands and options
+---
+
+This page documents all available commands in the Bitwarden CLI, extracted from the commander configuration in the source code.
+
+## Authentication Commands
+
+### login
+
+Log into a user account.
+
+```bash
+bw login [email] [password]
+```
+
+<ParamField path="email" type="string" optional>
+  Email address for your Bitwarden account. If omitted, you'll be prompted.
+</ParamField>
+
+<ParamField path="password" type="string" optional>
+  Master password. If omitted, you'll be prompted.
+</ParamField>
+
+#### Options
+
+<ParamField path="--method" type="string">
+  Two-step login method (0=Authenticator, 1=Email, 3=YubiKey, etc.)
+</ParamField>
+
+<ParamField path="--code" type="string">
+  Two-step login code
+</ParamField>
+
+<ParamField path="--sso" type="string" optional>
+  Log in with Single Sign-On. Optional organization identifier.
+</ParamField>
+
+<ParamField path="--apikey" type="boolean">
+  Log in with an API Key
+</ParamField>
+
+<ParamField path="--passwordenv" type="string">
+  Environment variable storing your password
+</ParamField>
+
+<ParamField path="--passwordfile" type="string">
+  Path to file containing your password as the first line
+</ParamField>
+
+<ParamField path="--check" type="boolean">
+  Check login status without logging in
+</ParamField>
+
+#### Examples
+
+```bash
+# Interactive login
+bw login
+
+# Login with credentials
+bw login john@example.com myPassword321 --raw
+
+# Login with two-factor authentication
+bw login john@example.com myPassword321 --method 1 --code 249213
+
+# SSO login
+bw login --sso
+
+# Check if logged in
+bw login --check
+```
+
+### logout
+
+Log out of the current user account.
+
+```bash
+bw logout
+```
+
+This command clears all local vault data and session information.
+
+#### Example
+
+```bash
+bw logout
+```
+
+### unlock
+
+Unlock the vault and return a new session key.
+
+```bash
+bw unlock [password]
+```
+
+<ParamField path="password" type="string" optional>
+  Master password to unlock the vault. If omitted, you'll be prompted.
+</ParamField>
+
+#### Options
+
+<ParamField path="--check" type="boolean">
+  Check vault lock status without unlocking
+</ParamField>
+
+<ParamField path="--passwordenv" type="string">
+  Environment variable storing your password
+</ParamField>
+
+<ParamField path="--passwordfile" type="string">
+  Path to file containing your password as the first line
+</ParamField>
+
+#### Examples
+
+```bash
+# Interactive unlock
+bw unlock
+
+# Unlock with password
+bw unlock myPassword321
+
+# Get session key only
+bw unlock myPassword321 --raw
+
+# Check lock status
+bw unlock --check
+```
+
+<Note>
+After unlocking, previous session keys are invalidated. Use `--raw` to get just the session key and set it:
+
+```bash
+export BW_SESSION="$(bw unlock --raw)"
+```
+</Note>
+
+### lock
+
+Lock the vault and destroy active session keys.
+
+```bash
+bw lock
+```
+
+<Warning>
+Users with Key Connector enabled will be logged out instead of locked.
+</Warning>
+
+#### Example
+
+```bash
+bw lock
+```
+
+## Vault Synchronization
+
+### sync
+
+Pull the latest vault data from the server.
+
+```bash
+bw sync
+```
+
+#### Options
+
+<ParamField path="-f, --force" type="boolean">
+  Force a full sync instead of incremental
+</ParamField>
+
+<ParamField path="--last" type="boolean">
+  Display the last sync date
+</ParamField>
+
+#### Examples
+
+```bash
+# Normal sync
+bw sync
+
+# Force full sync
+bw sync -f
+
+# Check last sync time
+bw sync --last
+```
+
+## Vault Operations
+
+### list
+
+List an array of objects from the vault.
+
+```bash
+bw list <object>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to list:
+  - `items`: Vault items
+  - `folders`: Folders
+  - `collections`: Collections
+  - `org-collections`: Organization collections
+  - `org-members`: Organization members
+  - `organizations`: Organizations
+</ParamField>
+
+#### Options
+
+<ParamField path="--search" type="string">
+  Search term to filter results
+</ParamField>
+
+<ParamField path="--url" type="string">
+  Filter login items by URL (URL-match search)
+</ParamField>
+
+<ParamField path="--folderid" type="string">
+  Filter items by folder ID (use `null` for items without folder)
+</ParamField>
+
+<ParamField path="--collectionid" type="string">
+  Filter items by collection ID
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Filter items or collections by organization ID (use `notnull` for any organization)
+</ParamField>
+
+<ParamField path="--trash" type="boolean">
+  Show only items in trash
+</ParamField>
+
+<ParamField path="--archived" type="boolean">
+  Show only archived items (feature flag required)
+</ParamField>
+
+#### Examples
+
+```bash
+# List all items
+bw list items
+
+# Search items
+bw list items --search google
+
+# Items in specific folder
+bw list items --folderid 60556c31-e649-4b5d-8daf-fc1c391a1bf2
+
+# Items without folder
+bw list items --folderid null
+
+# Items in any organization
+bw list items --organizationid notnull
+
+# Search with filter (AND operation)
+bw list items --search google --folderid 60556c31-e649-4b5d-8daf-fc1c391a1bf2
+
+# Filter by URL
+bw list items --url https://google.com
+
+# Items in trash
+bw list items --trash
+
+# Organization members
+bw list org-members --organizationid 60556c31-e649-4b5d-8daf-fc1c391a1bf2
+```
+
+<Note>
+Combining search with filters performs a logical AND. Combining multiple filters performs a logical OR.
+</Note>
+
+### get
+
+Get an object from the vault.
+
+```bash
+bw get <object> <id>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to retrieve:
+  - `item`: Full item details
+  - `username`: Username field only
+  - `password`: Password field only
+  - `uri`: URI field only
+  - `totp`: TOTP code
+  - `notes`: Notes field only
+  - `exposed`: Check if password is exposed in data breaches
+  - `attachment`: Download attachment
+  - `folder`: Folder details
+  - `collection`: Collection details
+  - `org-collection`: Organization collection
+  - `organization`: Organization details
+  - `template`: JSON template for creating objects
+  - `fingerprint`: Account fingerprint
+  - `send`: Send details
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Search term or object's globally unique ID
+</ParamField>
+
+#### Options
+
+<ParamField path="--itemid" type="string">
+  Item ID for attachment operations
+</ParamField>
+
+<ParamField path="--output" type="string">
+  Output directory or filename for attachments
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Organization ID for organization objects
+</ParamField>
+
+#### Examples
+
+```bash
+# Get full item
+bw get item 99ee88d2-6046-4ea7-92c2-acac464b1412
+
+# Get password by search
+bw get password https://google.com
+
+# Get TOTP code
+bw get totp google.com
+
+# Get notes
+bw get notes google.com
+
+# Check if password is exposed
+bw get exposed yahoo.com
+
+# Download attachment
+bw get attachment b857igwl1dzrs2 --itemid 99ee88d2-6046-4ea7-92c2-acac464b1412 --output ./photo.jpg
+
+# Get attachment to stdout
+bw get attachment photo.jpg --itemid 99ee88d2-6046-4ea7-92c2-acac464b1412 --raw
+
+# Get folder
+bw get folder email
+
+# Get template
+bw get template folder
+```
+
+### create
+
+Create an object in the vault.
+
+```bash
+bw create <object> [encodedJson]
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to create:
+  - `item`: Vault item
+  - `attachment`: File attachment
+  - `folder`: Folder
+  - `org-collection`: Organization collection
+</ParamField>
+
+<ParamField path="encodedJson" type="string" optional>
+  Base64-encoded JSON of the object. Can be piped from stdin.
+</ParamField>
+
+#### Options
+
+<ParamField path="--file" type="string">
+  Path to file for attachment creation
+</ParamField>
+
+<ParamField path="--itemid" type="string">
+  Item ID when creating an attachment
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Organization ID for organization objects
+</ParamField>
+
+#### Examples
+
+```bash
+# Create folder from encoded JSON
+bw create folder eyJuYW1lIjoiTXkgRm9sZGVyIn0K
+
+# Create from piped input
+echo 'eyJuYW1lIjoiTXkgRm9sZGVyIn0K' | bw create folder
+
+# Create attachment
+bw create attachment --file ./myfile.csv --itemid 16b15b89-65b3-4639-ad2a-95052a6d8f66
+
+# Encode and create in one step
+echo '{"name":"My Folder"}' | bw encode | bw create folder
+```
+
+### edit
+
+Edit an object in the vault.
+
+```bash
+bw edit <object> <id> [encodedJson]
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to edit:
+  - `item`: Vault item
+  - `item-collections`: Item's collection assignments
+  - `folder`: Folder
+  - `org-collection`: Organization collection
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Object's globally unique ID
+</ParamField>
+
+<ParamField path="encodedJson" type="string" optional>
+  Base64-encoded JSON with updates. Can be piped from stdin.
+</ParamField>
+
+#### Options
+
+<ParamField path="--organizationid" type="string">
+  Organization ID for organization objects
+</ParamField>
+
+#### Examples
+
+```bash
+# Edit folder
+bw edit folder 5cdfbd80-d99f-409b-915b-f4c5d0241b02 eyJuYW1lIjoiTXkgRm9sZGVyMiJ9Cg==
+
+# Edit from piped input
+echo 'eyJuYW1lIjoiTXkgRm9sZGVyMiJ9Cg==' | bw edit folder 5cdfbd80-d99f-409b-915b-f4c5d0241b02
+
+# Edit item collections
+bw edit item-collections 78307355-fd25-416b-88b8-b33fd0e88c82 WyI5NzQwNTNkMC0zYjMzLTRiOTgtODg2ZS1mZWNmNWM4ZGJhOTYiXQ==
+```
+
+### delete
+
+Delete an object from the vault.
+
+```bash
+bw delete <object> <id>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to delete:
+  - `item`: Vault item (soft delete to trash)
+  - `attachment`: Attachment
+  - `folder`: Folder
+  - `org-collection`: Organization collection
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Object's globally unique ID
+</ParamField>
+
+#### Options
+
+<ParamField path="--itemid" type="string">
+  Item ID when deleting an attachment
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Organization ID for organization objects
+</ParamField>
+
+<ParamField path="-p, --permanent" type="boolean">
+  Permanently delete item (skip trash)
+</ParamField>
+
+#### Examples
+
+```bash
+# Soft delete item (to trash)
+bw delete item 7063feab-4b10-472e-b64c-785e2b870b92
+
+# Permanently delete item
+bw delete item 89c21cd2-fab0-4f69-8c6e-ab8a0168f69a --permanent
+
+# Delete folder
+bw delete folder 5cdfbd80-d99f-409b-915b-f4c5d0241b02
+
+# Delete attachment
+bw delete attachment b857igwl1dzrs2 --itemid 310d5ffd-e9a2-4451-af87-ea054dce0f78
+```
+
+### restore
+
+Restore an object from trash or archive.
+
+```bash
+bw restore <object> <id>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to restore (currently only `item`)
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Object's globally unique ID
+</ParamField>
+
+#### Example
+
+```bash
+bw restore item 7063feab-4b10-472e-b64c-785e2b870b92
+```
+
+### archive
+
+Archive an item from the vault.
+
+```bash
+bw archive <object> <id>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object to archive (currently only `item`)
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Object's globally unique ID
+</ParamField>
+
+<Note>
+This command requires the PM19148_InnovationArchive feature flag.
+</Note>
+
+#### Example
+
+```bash
+bw archive item 7063feab-4b10-472e-b64c-785e2b870b92
+```
+
+## Organization Commands
+
+### move
+
+Move an item to an organization (share with organization).
+
+```bash
+bw move <id> <organizationId> [encodedJson]
+```
+
+<ParamField path="id" type="string" required>
+  Item's globally unique ID
+</ParamField>
+
+<ParamField path="organizationId" type="string" required>
+  Organization's globally unique ID
+</ParamField>
+
+<ParamField path="encodedJson" type="string" optional>
+  Base64-encoded JSON array of collection IDs. Can be piped from stdin.
+</ParamField>
+
+#### Examples
+
+```bash
+# Move item to organization
+bw move 4af958ce-96a7-45d9-beed-1e70fabaa27a 6d82949b-b44d-468a-adae-3f3bacb0ea32 WyI5NzQwNTNkMC0zYjMzLTRiOTgtODg2ZS1mZWNmNWM4ZGJhOTYiXQ==
+
+# With piped collection IDs
+echo '["974053d0-3b33-4b98-886e-fecf5c8dba96"]' | bw encode | bw move 4af958ce-96a7-45d9-beed-1e70fabaa27a 6d82949b-b44d-468a-adae-3f3bacb0ea32
+```
+
+### confirm
+
+Confirm an organization member.
+
+```bash
+bw confirm <object> <id>
+```
+
+<ParamField path="object" type="string" required>
+  Type of object (currently only `org-member`)
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Member's globally unique ID
+</ParamField>
+
+#### Options
+
+<ParamField path="--organizationid" type="string" required>
+  Organization's globally unique ID
+</ParamField>
+
+#### Example
+
+```bash
+bw confirm org-member 7063feab-4b10-472e-b64c-785e2b870b92 --organizationid 310d5ffd-e9a2-4451-af87-ea054dce0f78
+```
+
+## Import/Export
+
+### import
+
+Import vault data from a file.
+
+```bash
+bw import [format] [input]
+```
+
+<ParamField path="format" type="string" optional>
+  Format of the import file (e.g., `bitwardencsv`, `keepass2xml`, `lastpasscsv`)
+</ParamField>
+
+<ParamField path="input" type="string" optional>
+  File path to the data to import
+</ParamField>
+
+#### Options
+
+<ParamField path="--formats" type="boolean">
+  List all supported import formats
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Import to a specific organization
+</ParamField>
+
+#### Examples
+
+```bash
+# List available formats
+bw import --formats
+
+# Import from CSV
+bw import bitwardencsv ./from/source.csv
+
+# Import KeePass XML
+bw import keepass2xml keepass_backup.xml
+
+# Import to organization
+bw import --organizationid cf14adc3-aca5-4573-890a-f6fa231436d9 keepass2xml keepass_backup.xml
+```
+
+### export
+
+Export vault data to a file.
+
+```bash
+bw export
+```
+
+#### Options
+
+<ParamField path="--output" type="string">
+  Output directory or filename
+</ParamField>
+
+<ParamField path="--format" type="string">
+  Export format: `csv` (default), `json`, `encrypted_json`, or `zip`
+</ParamField>
+
+<ParamField path="--password" type="string" optional>
+  Password to encrypt export (only for `encrypted_json` format)
+</ParamField>
+
+<ParamField path="--organizationid" type="string">
+  Export specific organization vault
+</ParamField>
+
+#### Examples
+
+```bash
+# Export to CSV
+bw export
+
+# Export to stdout
+bw --raw export
+
+# Export to JSON
+bw export --format json
+
+# Export with custom output
+bw export --output ./exp/bw.csv
+
+# Export encrypted JSON
+bw export --format encrypted_json --password myPassword321 --output bw.json
+
+# Export organization vault
+bw export --organizationid 7063feab-4b10-472e-b64c-785e2b870b92
+```
+
+<Warning>
+Exports contain sensitive vault data. Ensure exported files are stored securely.
+</Warning>
+
+## Send Commands
+
+### send
+
+Quickly create and share a Bitwarden Send.
+
+```bash
+bw send <data>
+```
+
+<ParamField path="data" type="string" required>
+  Text or file path to send
+</ParamField>
+
+#### Options
+
+<ParamField path="-f, --file" type="boolean">
+  Treat `<data>` as a file path
+</ParamField>
+
+<ParamField path="-d, --deleteInDays" type="number">
+  Days until deletion (default: 7)
+</ParamField>
+
+<ParamField path="--password" type="string">
+  Password to access the Send
+</ParamField>
+
+<ParamField path="--emails" type="string">
+  Comma-separated email addresses that can access the Send (requires feature flag)
+</ParamField>
+
+<ParamField path="-a, --maxAccessCount" type="number">
+  Maximum number of accesses allowed
+</ParamField>
+
+<ParamField path="--hidden" type="boolean">
+  Hide text content by default in web vault
+</ParamField>
+
+<ParamField path="-n, --name" type="string">
+  Name for the Send (defaults to GUID for text, filename for files)
+</ParamField>
+
+<ParamField path="--notes" type="string">
+  Notes to add to the Send
+</ParamField>
+
+<ParamField path="--fullObject" type="boolean">
+  Return full Send object instead of just the access URL
+</ParamField>
+
+#### Examples
+
+```bash
+# Send text
+bw send "secret message"
+
+# Send from stdin
+echo "text to send" | bw send
+
+# Send file
+bw send -f ./file.ext
+
+# Send with options
+bw send "message" --deleteInDays 14 --maxAccessCount 5
+
+# Send with password
+bw send -f ./secret.pdf --password myPassword123
+```
+
+### send create
+
+Create a Send with full control.
+
+```bash
+bw send create [encodedJson]
+```
+
+<ParamField path="encodedJson" type="string" optional>
+  Base64-encoded Send JSON. Can be piped from stdin.
+</ParamField>
+
+#### Options
+
+<ParamField path="--file" type="string">
+  File path for file Send
+</ParamField>
+
+<ParamField path="--text" type="string">
+  Text content for text Send
+</ParamField>
+
+<ParamField path="--hidden" type="boolean">
+  Hide text by default (only with `--text`)
+</ParamField>
+
+#### Example
+
+```bash
+# Create from template
+bw send template send.text | bw encode | bw send create
+```
+
+### send list
+
+List all Sends owned by you.
+
+```bash
+bw send list
+```
+
+#### Example
+
+```bash
+bw send list
+```
+
+### send get
+
+Get a Send by ID or search term.
+
+```bash
+bw send get <id>
+```
+
+<ParamField path="id" type="string" required>
+  Send ID or search term
+</ParamField>
+
+#### Options
+
+<ParamField path="--output" type="string">
+  Output directory or filename for file Sends
+</ParamField>
+
+<ParamField path="--text" type="boolean">
+  Return only the text content
+</ParamField>
+
+#### Examples
+
+```bash
+# Get Send details
+bw send get searchText
+
+# Get by ID
+bw send get id
+
+# Get text content only
+bw send get searchText --text
+
+# Download file Send
+bw send get searchText --output ../Photos/photo.jpg
+
+# Output file to stdout
+bw send get searchText --file --raw
+```
+
+### send edit
+
+Edit a Send.
+
+```bash
+bw send edit [encodedJson]
+```
+
+<ParamField path="encodedJson" type="string" optional>
+  Base64-encoded updated Send JSON. Can be piped from stdin.
+</ParamField>
+
+#### Options
+
+<ParamField path="--itemid" type="string">
+  Override the item ID in the JSON
+</ParamField>
+
+<Note>
+You cannot update a file Send's file content. Delete and recreate instead.
+</Note>
+
+### send delete
+
+Delete a Send.
+
+```bash
+bw send delete <id>
+```
+
+<ParamField path="id" type="string" required>
+  Send ID to delete
+</ParamField>
+
+#### Example
+
+```bash
+bw send delete 7063feab-4b10-472e-b64c-785e2b870b92
+```
+
+### send remove-password
+
+Remove password protection from a Send.
+
+```bash
+bw send remove-password <id>
+```
+
+<ParamField path="id" type="string" required>
+  Send ID to modify
+</ParamField>
+
+#### Example
+
+```bash
+bw send remove-password 7063feab-4b10-472e-b64c-785e2b870b92
+```
+
+### receive
+
+Access a Send from a URL.
+
+```bash
+bw receive <url>
+```
+
+<ParamField path="url" type="string" required>
+  Bitwarden Send URL
+</ParamField>
+
+#### Options
+
+<ParamField path="--password" type="string">
+  Password to access the Send
+</ParamField>
+
+<ParamField path="--passwordenv" type="string">
+  Environment variable storing the password
+</ParamField>
+
+<ParamField path="--passwordfile" type="string">
+  File containing the password as the first line
+</ParamField>
+
+<ParamField path="--obj" type="boolean">
+  Return Send JSON object instead of content
+</ParamField>
+
+<ParamField path="--output" type="string">
+  File path to save file-type Send
+</ParamField>
+
+#### Example
+
+```bash
+bw receive https://vault.bitwarden.com/#/send/rg3iuoS_Akm2gqy6ADRHmg/Ht7dYjsqjmgqUM3rjzZDSQ
+```
+
+## Utility Commands
+
+### generate
+
+Generate a password or passphrase.
+
+```bash
+bw generate
+```
+
+#### Options
+
+<ParamField path="-u, --uppercase" type="boolean">
+  Include uppercase characters
+</ParamField>
+
+<ParamField path="-l, --lowercase" type="boolean">
+  Include lowercase characters
+</ParamField>
+
+<ParamField path="-n, --number" type="boolean">
+  Include numbers
+</ParamField>
+
+<ParamField path="-s, --special" type="boolean">
+  Include special characters
+</ParamField>
+
+<ParamField path="-p, --passphrase" type="boolean">
+  Generate a passphrase instead of password
+</ParamField>
+
+<ParamField path="--length" type="number">
+  Password length (minimum 5, default 14)
+</ParamField>
+
+<ParamField path="--words" type="number">
+  Number of words in passphrase (minimum 3)
+</ParamField>
+
+<ParamField path="--minNumber" type="number">
+  Minimum number of numeric characters
+</ParamField>
+
+<ParamField path="--minSpecial" type="number">
+  Minimum number of special characters
+</ParamField>
+
+<ParamField path="--separator" type="string">
+  Word separator for passphrases
+</ParamField>
+
+<ParamField path="-c, --capitalize" type="boolean">
+  Capitalize passphrase words
+</ParamField>
+
+<ParamField path="--includeNumber" type="boolean">
+  Include number in passphrase
+</ParamField>
+
+<ParamField path="--ambiguous" type="boolean">
+  Avoid ambiguous characters
+</ParamField>
+
+#### Examples
+
+```bash
+# Default password (uppercase, lowercase, numbers, length 14)
+bw generate
+
+# Custom password
+bw generate -u -l --length 18
+bw generate -ulns --length 25
+bw generate -ul
+
+# Passphrase
+bw generate -p --separator _
+bw generate -p --words 5 --separator space
+bw generate -p --words 5 --separator empty
+```
+
+### encode
+
+Base64 encode stdin for use with create/edit commands.
+
+```bash
+echo '{"name":"My Folder"}' | bw encode
+```
+
+Output can be piped to `create` or `edit` commands.
+
+#### Example
+
+```bash
+echo '{"name":"My Folder"}' | bw encode
+# eyJuYW1lIjoiTXkgRm9sZGVyIn0K
+```
+
+### config
+
+Configure CLI settings.
+
+```bash
+bw config <setting> [value]
+```
+
+<ParamField path="setting" type="string" required>
+  Setting to configure (currently only `server`)
+</ParamField>
+
+<ParamField path="value" type="string" optional>
+  Value to set. Omit to display current value.
+</ParamField>
+
+#### Options
+
+<ParamField path="--web-vault" type="string">
+  Custom web vault URL
+</ParamField>
+
+<ParamField path="--api" type="string">
+  Custom API URL
+</ParamField>
+
+<ParamField path="--identity" type="string">
+  Custom identity URL
+</ParamField>
+
+<ParamField path="--icons" type="string">
+  Custom icons service URL
+</ParamField>
+
+<ParamField path="--notifications" type="string">
+  Custom notifications URL
+</ParamField>
+
+<ParamField path="--events" type="string">
+  Custom events URL
+</ParamField>
+
+<ParamField path="--key-connector" type="string">
+  Key Connector server URL
+</ParamField>
+
+#### Examples
+
+```bash
+# View current server
+bw config server
+
+# Set server
+bw config server https://bw.company.com
+bw config server bitwarden.com
+
+# Set individual endpoints
+bw config server --api http://localhost:4000 --identity http://localhost:33656
+```
+
+### status
+
+Show server, last sync, user info, and vault status.
+
+```bash
+bw status
+```
+
+#### Output
+
+Returns JSON with:
+
+```json
+{
+  "serverUrl": "https://bitwarden.example.com",
+  "lastSync": "2020-06-16T06:33:51.419Z",
+  "userEmail": "user@example.com",
+  "userId": "00000000-0000-0000-0000-000000000000",
+  "status": "unlocked"
+}
+```
+
+Status values:
+- `unauthenticated`: Not logged in
+- `locked`: Logged in, vault locked
+- `unlocked`: Logged in, vault unlocked
+
+#### Example
+
+```bash
+bw status
+```
+
+### update
+
+Check for CLI updates.
+
+```bash
+bw update
+```
+
+Returns the download URL for the latest version if an update is available.
+
+#### Examples
+
+```bash
+# Check for updates
+bw update
+
+# Get download URL only
+bw update --raw
+```
+
+### completion
+
+Generate shell completions.
+
+```bash
+bw completion --shell <shell>
+```
+
+<ParamField path="--shell" type="string" required>
+  Shell to generate completions for (currently only `zsh`)
+</ParamField>
+
+#### Example
+
+```bash
+bw completion --shell zsh
+```
+
+### sdk-version
+
+Print the SDK version.
+
+```bash
+bw sdk-version
+```
+
+## Template Command
+
+Get JSON templates for creating objects.
+
+```bash
+bw get template <object>
+```
+
+For Send templates:
+
+```bash
+bw send template <object>
+```
+
+<ParamField path="object" type="string" required>
+  Template type: `item`, `folder`, `collection`, `send.text`, `send.file`, etc.
+</ParamField>
+
+#### Examples
+
+```bash
+# Get folder template
+bw get template folder
+
+# Get item template
+bw get template item
+
+# Get Send templates
+bw send template send.text
+bw send template send.file
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Serve Mode" icon="server" href="./serve-mode">
+    Run CLI as RESTful API server
+  </Card>
+  <Card title="Building" icon="code" href="./building">
+    Build CLI from source
+  </Card>
+</CardGroup>

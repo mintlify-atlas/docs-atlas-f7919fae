@@ -1,122 +1,206 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Bitwarden Clients",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#175DDC",
+    "light": "#1F5FDC",
+    "dark": "#134FBF"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/bitwarden/clients"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/bitwarden/clients"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Overview",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "architecture",
+              "contributing"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Development Setup",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "setup/requirements",
+              "setup/installation",
+              "setup/building"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Applications",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Browser Extension",
             "pages": [
-              "api-reference/introduction"
+              "apps/browser/overview",
+              "apps/browser/building",
+              "apps/browser/architecture",
+              "apps/browser/manifest-v3"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Desktop",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "apps/desktop/overview",
+              "apps/desktop/building",
+              "apps/desktop/architecture",
+              "apps/desktop/native-modules"
+            ]
+          },
+          {
+            "group": "Web Vault",
+            "pages": [
+              "apps/web/overview",
+              "apps/web/building",
+              "apps/web/architecture"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "apps/cli/overview",
+              "apps/cli/building",
+              "apps/cli/commands",
+              "apps/cli/serve-mode"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Libraries",
+        "groups": [
+          {
+            "group": "Core Libraries",
+            "pages": [
+              "libs/overview",
+              "libs/common",
+              "libs/angular"
+            ]
+          },
+          {
+            "group": "Domain Libraries",
+            "pages": [
+              "libs/auth",
+              "libs/vault",
+              "libs/admin-console",
+              "libs/billing"
+            ]
+          },
+          {
+            "group": "Platform Libraries",
+            "pages": [
+              "libs/platform",
+              "libs/components",
+              "libs/state-management"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "libs/tools/generator",
+              "libs/tools/send",
+              "libs/tools/export"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guide/monorepo-structure",
+              "guide/nx-workspace",
+              "guide/dependency-injection"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "guide/cryptography",
+              "guide/encryption",
+              "guide/key-management"
+            ]
+          },
+          {
+            "group": "State Management",
+            "pages": [
+              "guide/state/overview",
+              "guide/state/services",
+              "guide/state/migrations"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "guide/testing/unit-tests",
+              "guide/testing/integration-tests",
+              "guide/testing/e2e-tests"
+            ]
+          },
+          {
+            "group": "Code Style",
+            "pages": [
+              "guide/typescript-style",
+              "guide/angular-patterns",
+              "guide/linting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/login-strategies",
+              "api/auth/token-service",
+              "api/auth/two-factor"
+            ]
+          },
+          {
+            "group": "Vault",
+            "pages": [
+              "api/vault/cipher-service",
+              "api/vault/folder-service",
+              "api/vault/collection-service"
+            ]
+          },
+          {
+            "group": "Cryptography",
+            "pages": [
+              "api/crypto/crypto-service",
+              "api/crypto/encryption",
+              "api/crypto/key-generation"
+            ]
+          },
+          {
+            "group": "Platform",
+            "pages": [
+              "api/platform/storage",
+              "api/platform/messaging",
+              "api/platform/logging"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

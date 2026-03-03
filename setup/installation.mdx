@@ -1,0 +1,416 @@
+---
+title: Installation
+description: Clone the Bitwarden Clients repository and install dependencies
+---
+
+# Installation
+
+This guide walks you through cloning the Bitwarden Clients repository and installing all necessary dependencies.
+
+## Prerequisites
+
+Before starting, ensure you have the required software installed:
+
+<Info>
+  - **Node.js:** >= 22.12.0 ([installation guide](/setup/requirements#nodejs))
+  - **npm:** ~10 (comes with Node.js)
+  - **Git:** Any recent version
+  
+  See the [requirements page](/setup/requirements) for detailed installation instructions.
+</Info>
+
+## Clone the repository
+
+<Steps>
+  <Step title="Choose your clone method">
+    Clone via HTTPS or SSH based on your GitHub authentication preference:
+    
+    <CodeGroup>
+    ```bash HTTPS
+    git clone https://github.com/bitwarden/clients.git
+    cd clients
+    ```
+    
+    ```bash SSH
+    git clone git@github.com:bitwarden/clients.git
+    cd clients
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Verify repository structure">
+    Check that the repository cloned successfully:
+    
+    ```bash
+    ls -la
+    ```
+    
+    You should see:
+    ```
+    apps/                 # Client applications
+    libs/                 # Shared libraries
+    bitwarden_license/    # Commercial features
+    package.json          # Root package configuration
+    nx.json              # Nx workspace configuration
+    tsconfig.base.json   # TypeScript configuration
+    ```
+  </Step>
+</Steps>
+
+## Install dependencies
+
+The repository uses npm workspaces to manage dependencies across all applications and libraries.
+
+### Root installation
+
+<Warning>
+  Always run `npm install` from the repository root, not from individual app directories.
+</Warning>
+
+```bash
+# From the repository root
+npm install
+```
+
+This command:
+
+1. Installs all root dependencies from `package.json`
+2. Installs dependencies for all workspace packages (`apps/*`, `libs/**/*`)
+3. Creates a single `node_modules` at the root with hoisted dependencies
+4. Links workspace packages together
+5. Runs the `prepare` script (sets up Husky git hooks)
+
+### Installation output
+
+The installation process will:
+
+<Tabs>
+  <Tab title="Download packages">
+    Downloads ~1.5 GB of dependencies:
+    
+    ```bash
+    npm install
+    
+    # Output:
+    # added 2847 packages in 2m
+    # 
+    # 89 packages are looking for funding
+    #   run `npm fund` for details
+    ```
+  </Tab>
+  
+  <Tab title="Set up git hooks">
+    Configures Husky for pre-commit hooks:
+    
+    ```bash
+    # Runs automatically during install:
+    # > @bitwarden/clients@0.0.0 prepare
+    # > husky
+    ```
+    
+    This sets up:
+    - **pre-commit:** Runs lint-staged (format + lint)
+    - **commit-msg:** Validates commit message format
+  </Tab>
+  
+  <Tab title="Link workspaces">
+    Links workspace packages:
+    
+    ```bash
+    # Apps can import from libs using:
+    import { CipherService } from '@bitwarden/common/vault/services/cipher.service';
+    
+    # Instead of relative paths:
+    import { CipherService } from '../../../libs/common/src/vault/services/cipher.service';
+    ```
+  </Tab>
+</Tabs>
+
+### Platform-specific post-install
+
+Some applications require additional setup after `npm install`:
+
+<Tabs>
+  <Tab title="Desktop (Electron)">
+    The desktop app requires rebuilding native modules for Electron:
+    
+    ```bash
+    cd apps/desktop
+    npm run postinstall
+    ```
+    
+    This runs automatically when you `npm install` in the desktop directory, but you may need to run it manually after:
+    - Updating Electron version
+    - Switching Node.js versions
+    - Installing new native dependencies
+    
+    **For macOS native modules:**
+    ```bash
+    cd apps/desktop/desktop_native
+    ./autofill_provider/build.sh
+    node build.js cross-platform
+    ```
+  </Tab>
+  
+  <Tab title="Browser extension">
+    No additional setup required. The browser extension has no native dependencies.
+    
+    ```bash
+    # Ready to build
+    cd apps/browser
+    npm run build:chrome
+    ```
+  </Tab>
+  
+  <Tab title="Web vault">
+    No additional setup required.
+    
+    ```bash
+    # Ready to build
+    cd apps/web
+    npm run build:oss
+    ```
+  </Tab>
+  
+  <Tab title="CLI">
+    No additional setup required.
+    
+    ```bash
+    # Ready to build
+    cd apps/cli
+    npm run build:oss
+    ```
+  </Tab>
+</Tabs>
+
+## Workspace structure
+
+After installation, your workspace will have this structure:
+
+```
+bitwarden/clients/
+├── node_modules/           # Shared dependencies (hoisted)
+├── apps/
+│   ├── browser/
+│   │   └── node_modules/  # Browser-specific dependencies
+│   ├── cli/
+│   │   └── node_modules/  # CLI-specific dependencies
+│   ├── desktop/
+│   │   ├── node_modules/  # Desktop-specific dependencies
+│   │   └── desktop_native/
+│   │       └── napi/
+│   │           └── node_modules/  # Native module deps
+│   └── web/
+│       └── node_modules/  # Web-specific dependencies
+├── libs/
+│   └── [individual library node_modules as needed]
+└── package-lock.json       # Lockfile for all workspaces
+```
+
+## Verify installation
+
+Run these commands to ensure everything is set up correctly:
+
+<CodeGroup>
+
+```bash Check versions
+# Verify Node.js version
+node --version
+# Expected: v22.12.0 or higher
+
+# Verify npm version
+npm --version
+# Expected: 10.x.x
+
+# Check installed packages
+npm list --depth=0
+# Shows all root dependencies
+```
+
+```bash Run tests
+# Run a quick test to verify setup
+npm test -- --testPathPattern=cipher.service.spec.ts
+
+# If tests run successfully, your setup is correct
+```
+
+```bash Check build tools
+# Verify Nx is available
+npx nx --version
+# Expected: 21.6.10
+
+# Verify TypeScript
+npx tsc --version
+# Expected: 5.8.3
+
+# Verify Webpack
+npx webpack --version
+# Expected: 5.104.1
+```
+
+</CodeGroup>
+
+## Using Node Version Manager (nvm)
+
+If you use nvm, the repository includes an `.nvmrc` file:
+
+```bash
+# Install the specified Node version
+nvm install
+
+# Use the specified Node version
+nvm use
+# Output: Now using node v22.x.x (npm v10.x.x)
+
+# Set as default (optional)
+nvm alias default 22
+```
+
+## Troubleshooting
+
+### Installation fails with permission errors
+
+<Warning>
+  Never use `sudo npm install`. This can cause permission issues.
+</Warning>
+
+**Solution:** Configure npm to install global packages in your home directory:
+
+```bash
+# Create a directory for global packages
+mkdir ~/.npm-global
+
+# Configure npm to use it
+npm config set prefix '~/.npm-global'
+
+# Add to your PATH (in ~/.bashrc or ~/.zshrc)
+export PATH=~/.npm-global/bin:$PATH
+
+# Reload your shell
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+### Node version mismatch
+
+```bash
+# Error: The engine "node" is incompatible with this module
+
+# Solution: Use the correct Node version
+nvm use 22
+# Or install it first
+nvm install 22
+```
+
+### Native module build failures
+
+**On Windows:**
+
+```powershell
+# Install build tools
+npm install --global windows-build-tools
+
+# Or install Visual Studio Build Tools manually
+# https://visualstudio.microsoft.com/downloads/
+```
+
+**On macOS:**
+
+```bash
+# Install Xcode Command Line Tools
+xcode-select --install
+
+# For Rust-based native modules
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**On Linux:**
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential
+
+# Fedora
+sudo dnf install gcc gcc-c++ make
+```
+
+### Husky hooks not working
+
+If git hooks aren't running:
+
+```bash
+# Reinstall Husky
+npm run prepare
+
+# Or manually
+npx husky install
+```
+
+### Disk space issues
+
+The full installation requires ~10 GB of disk space. If you're low on space:
+
+```bash
+# Clean npm cache
+npm cache clean --force
+
+# Remove old node_modules (if reinstalling)
+rm -rf node_modules apps/*/node_modules libs/*/node_modules
+
+# Reinstall
+npm install
+```
+
+### Package lock conflicts
+
+If you encounter package-lock.json conflicts after pulling updates:
+
+```bash
+# Remove lock file and node_modules
+rm package-lock.json
+rm -rf node_modules
+
+# Reinstall
+npm install
+```
+
+<Note>
+  This should be a last resort. Usually `npm install` will automatically resolve lock file issues.
+</Note>
+
+## Next steps
+
+Now that you've installed the repository:
+
+<Steps>
+  <Step title="Build an application">
+    Follow the [building guide](/setup/building) to compile and run applications
+  </Step>
+  
+  <Step title="Run tests">
+    Verify your setup by running the test suite:
+    ```bash
+    npm test
+    ```
+  </Step>
+  
+  <Step title="Start developing">
+    Check out the [contributing guide](/contributing) to learn the development workflow
+  </Step>
+</Steps>
+
+## Additional resources
+
+<CardGroup cols={2}>
+  <Card title="Requirements" icon="list-check" href="/setup/requirements">
+    Review detailed system requirements
+  </Card>
+  <Card title="Building" icon="hammer" href="/setup/building">
+    Build and run applications
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the monorepo structure
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing">
+    Learn the development workflow
+  </Card>
+</CardGroup>

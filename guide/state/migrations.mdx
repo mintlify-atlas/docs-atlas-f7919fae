@@ -1,0 +1,143 @@
+---
+title: State Migrations
+description: Migrating application state between versions in Bitwarden clients
+---
+
+## State Migrations
+
+State migrations allow you to transform stored state data when the structure changes between versions. This is critical for maintaining compatibility as the application evolves.
+
+## Migration System
+
+Bitwarden uses a versioned migration system located in `libs/common/src/state-migrations/`.
+
+### Migration Structure
+
+Each migration:
+- Has a version number
+- Transforms state from version N to N+1
+- Runs automatically on application startup
+
+```typescript
+import { Migration } from "../migration";
+
+export class MyMigration extends Migration {
+  version = 42; // Migration version
+
+  async migrate(helper: MigrationHelper): Promise<void> {
+    // Read old state
+    const oldValue = await helper.get<OldType>("oldKey");
+    
+    // Transform data
+    const newValue = this.transform(oldValue);
+    
+    // Write new state
+    await helper.set("newKey", newValue);
+    
+    // Remove old state
+    await helper.remove("oldKey");
+  }
+
+  private transform(old: OldType): NewType {
+    // Transformation logic
+    return {
+      newField: old.oldField,
+      // ... other transformations
+    };
+  }
+}
+```
+
+## MigrationHelper
+
+The `MigrationHelper` provides methods for state manipulation during migrations:
+
+```typescript
+interface MigrationHelper {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T): Promise<void>;
+  remove(key: string): Promise<void>;
+  getAccounts(): Promise<Account[]>;
+}
+```
+
+## Migration Best Practices
+
+<Warning>
+  Always test migrations with real data from previous versions. Data loss during migration can be catastrophic.
+</Warning>
+
+### 1. Preserve Data
+
+Never delete data without preserving it elsewhere first:
+
+```typescript
+// Good - preserve data
+const oldValue = await helper.get("oldKey");
+await helper.set("newKey", transform(oldValue));
+await helper.remove("oldKey");
+
+// Bad - risk of data loss
+await helper.remove("oldKey");
+await helper.set("newKey", defaultValue);
+```
+
+### 2. Handle Missing Data
+
+Always handle cases where expected data doesn't exist:
+
+```typescript
+const value = await helper.get("key");
+if (value == null) {
+  // Provide sensible defaults
+  await helper.set("key", defaultValue);
+  return;
+}
+```
+
+### 3. Test Incrementally
+
+Migrations run sequentially, so test each migration independently:
+
+```typescript
+// Test migration 42
+const result = await runMigration(42, testData);
+expect(result).toMatchSnapshot();
+```
+
+## Example Migration
+
+Here's a real example migrating vault timeout settings:
+
+```typescript
+export class VaultTimeoutMigration extends Migration {
+  version = 15;
+
+  async migrate(helper: MigrationHelper): Promise<void> {
+    const accounts = await helper.getAccounts();
+
+    for (const account of accounts) {
+      // Get old timeout value (in minutes)
+      const oldTimeout = await helper.get<number>(
+        `${account.id}_vaultTimeout`
+      );
+
+      if (oldTimeout != null) {
+        // Convert to new structure (in milliseconds)
+        const newTimeout = {
+          value: oldTimeout * 60 * 1000,
+          action: "lock",
+        };
+
+        await helper.set(`${account.id}_vaultTimeoutSettings`, newTimeout);
+        await helper.remove(`${account.id}_vaultTimeout`);
+      }
+    }
+  }
+}
+```
+
+## Related Topics
+
+- [State Management Overview](/guide/state/overview)
+- [State Services](/guide/state/services)

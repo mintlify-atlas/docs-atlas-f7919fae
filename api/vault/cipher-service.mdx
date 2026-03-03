@@ -1,0 +1,505 @@
+---
+title: "Cipher Service"
+description: "Service for managing password items, secure notes, cards, identities, and SSH keys"
+---
+
+## Overview
+
+The `CipherService` is the core service for managing vault items (ciphers) in Bitwarden. It handles encryption, decryption, synchronization, and CRUD operations for all cipher types including logins, secure notes, cards, identities, and SSH keys.
+
+**Source:** `libs/common/src/vault/services/cipher.service.ts`
+
+## Key Features
+
+- Encrypt and decrypt vault items
+- Create, read, update, and delete ciphers
+- Manage cipher attachments
+- Handle cipher collections and folders
+- Filter ciphers by URL for autofill
+- Track last used dates for ciphers
+- Soft delete and restore operations
+- Bulk operations for multiple ciphers
+
+## Type Definitions
+
+### EncryptionContext
+
+```typescript
+type EncryptionContext = {
+  cipher: Cipher;
+  /** The Id of the user that encrypted the cipher. It should always represent a UserId, even for Organization-owned ciphers */
+  encryptedFor: UserId;
+};
+```
+
+## Observables
+
+### cipherViews$
+
+Observable that emits an array of decrypted ciphers for the active user.
+
+```typescript
+cipherViews$(userId: UserId): Observable<CipherView[] | null>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get ciphers for
+
+**Returns:** Observable of decrypted cipher views, or `null` if decryption is in progress
+
+**Example:**
+```typescript
+const ciphers$ = cipherService.cipherViews$(userId);
+ciphers$.subscribe(ciphers => {
+  if (ciphers) {
+    console.log(`Found ${ciphers.length} ciphers`);
+  }
+});
+```
+
+### cipherListViews$
+
+Observable that emits SDK-optimized cipher list views for better performance.
+
+```typescript
+cipherListViews$(userId: UserId): Observable<CipherListView[] | CipherView[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get cipher list views for
+
+**Returns:** Observable of cipher list views (SDK) or full cipher views (legacy)
+
+### ciphers$
+
+Observable that emits an object of encrypted ciphers.
+
+```typescript
+ciphers$(userId: UserId): Observable<Record<CipherId, CipherData>>
+```
+
+### failedToDecryptCiphers$
+
+Observable that emits ciphers that failed to decrypt.
+
+```typescript
+failedToDecryptCiphers$(userId: UserId): Observable<CipherView[] | null>
+```
+
+## Core Methods
+
+### encrypt
+
+Encrypts a cipher view for storage.
+
+```typescript
+encrypt(
+  model: CipherView,
+  userId: UserId,
+  keyForEncryption?: SymmetricCryptoKey,
+  keyForCipherKeyDecryption?: SymmetricCryptoKey,
+  originalCipher?: Cipher,
+): Promise<EncryptionContext>
+```
+
+**Parameters:**
+- `model: CipherView` - The cipher view to encrypt
+- `userId: UserId` - The user ID performing the encryption
+- `keyForEncryption?: SymmetricCryptoKey` - Optional encryption key
+- `keyForCipherKeyDecryption?: SymmetricCryptoKey` - Optional decryption key for cipher key
+- `originalCipher?: Cipher` - Optional original cipher for history tracking
+
+**Returns:** Promise resolving to encryption context with encrypted cipher
+
+### decrypt
+
+Decrypts a cipher using SDK or legacy method.
+
+```typescript
+decrypt(cipher: Cipher, userId: UserId): Promise<CipherView>
+```
+
+**Parameters:**
+- `cipher: Cipher` - The encrypted cipher to decrypt
+- `userId: UserId` - The user ID to use for decryption
+
+**Returns:** Promise resolving to decrypted cipher view
+
+### get
+
+Retrieves a single cipher by ID.
+
+```typescript
+get(id: string, userId: UserId): Promise<Cipher>
+```
+
+**Parameters:**
+- `id: string` - The cipher ID
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to the cipher, or `null` if not found
+
+### getAll
+
+Retrieves all ciphers for a user.
+
+```typescript
+getAll(userId: UserId): Promise<Cipher[]>
+```
+
+**Returns:** Promise resolving to array of all ciphers
+
+### getAllDecrypted
+
+Retrieves and decrypts all ciphers for a user.
+
+```typescript
+getAllDecrypted(userId: UserId): Promise<CipherView[]>
+```
+
+**Returns:** Promise resolving to array of decrypted cipher views
+
+## CRUD Operations
+
+### createWithServer
+
+Creates a new cipher on the server.
+
+```typescript
+createWithServer(
+  cipherView: CipherView,
+  userId: UserId,
+  orgAdmin?: boolean,
+): Promise<CipherView>
+```
+
+**Parameters:**
+- `cipherView: CipherView` - The cipher to create
+- `userId: UserId` - The user ID creating the cipher
+- `orgAdmin?: boolean` - If true, creates as organization admin
+
+**Returns:** Promise resolving to the created cipher view
+
+**Example:**
+```typescript
+const newCipher = new CipherView();
+newCipher.type = CipherType.Login;
+newCipher.name = "My Website";
+newCipher.login.username = "user@example.com";
+newCipher.login.password = "securePassword123";
+
+const created = await cipherService.createWithServer(newCipher, userId);
+console.log(`Created cipher with ID: ${created.id}`);
+```
+
+### updateWithServer
+
+Updates an existing cipher on the server.
+
+```typescript
+updateWithServer(
+  cipherView: CipherView,
+  userId: UserId,
+  originalCipherView?: CipherView,
+  orgAdmin?: boolean,
+): Promise<CipherView>
+```
+
+**Parameters:**
+- `cipherView: CipherView` - The cipher to update
+- `userId: UserId` - The user ID updating the cipher
+- `originalCipherView?: CipherView` - Optional original cipher for comparison
+- `orgAdmin?: boolean` - If true, updates as organization admin
+
+**Returns:** Promise resolving to the updated cipher view
+
+### deleteWithServer
+
+Permanently deletes a cipher from the server.
+
+```typescript
+deleteWithServer(id: string, userId: UserId, asAdmin?: boolean): Promise<void>
+```
+
+**Parameters:**
+- `id: string` - The cipher ID to delete
+- `userId: UserId` - The user ID performing the deletion
+- `asAdmin?: boolean` - If true, deletes as organization admin
+
+### deleteManyWithServer
+
+Deletes multiple ciphers from the server.
+
+```typescript
+deleteManyWithServer(
+  ids: string[],
+  userId: UserId,
+  asAdmin?: boolean,
+  orgId?: OrganizationId,
+): Promise<void>
+```
+
+## Soft Delete & Restore
+
+### softDelete
+
+Soft deletes a cipher (moves to trash).
+
+```typescript
+softDelete(id: string | string[], userId: UserId): Promise<void>
+```
+
+**Parameters:**
+- `id: string | string[]` - Cipher ID or array of IDs to soft delete
+- `userId: UserId` - The user ID
+
+### softDeleteWithServer
+
+Soft deletes a cipher on the server.
+
+```typescript
+softDeleteWithServer(id: string, userId: UserId, asAdmin?: boolean): Promise<void>
+```
+
+### restore
+
+Restores a soft-deleted cipher.
+
+```typescript
+restore(
+  cipher: { id: string; revisionDate: string } | { id: string; revisionDate: string }[],
+  userId: UserId,
+): Promise<void>
+```
+
+### restoreWithServer
+
+Restores a cipher from trash on the server.
+
+```typescript
+restoreWithServer(id: string, userId: UserId, asAdmin?: boolean): Promise<void>
+```
+
+## URL Filtering
+
+### getAllDecryptedForUrl
+
+Retrieves ciphers matching a specific URL for autofill.
+
+```typescript
+getAllDecryptedForUrl(
+  url: string,
+  userId: UserId,
+  includeOtherTypes?: CipherType[],
+  defaultMatch?: UriMatchStrategySetting,
+  overrideNeverMatchStrategy?: true,
+): Promise<CipherView[]>
+```
+
+**Parameters:**
+- `url: string` - The URL to match against
+- `userId: UserId` - The user ID
+- `includeOtherTypes?: CipherType[]` - Additional cipher types to include
+- `defaultMatch?: UriMatchStrategySetting` - URI matching strategy
+- `overrideNeverMatchStrategy?: true` - Override never match setting
+
+**Returns:** Promise resolving to matching cipher views
+
+**Example:**
+```typescript
+const matches = await cipherService.getAllDecryptedForUrl(
+  "https://github.com/login",
+  userId
+);
+console.log(`Found ${matches.length} ciphers for GitHub`);
+```
+
+### filterCiphersForUrl
+
+Filters an array of ciphers for a specific URL.
+
+```typescript
+filterCiphersForUrl<C extends CipherViewLike>(
+  ciphers: C[],
+  url: string,
+  includeOtherTypes?: CipherType[],
+  defaultMatch?: UriMatchStrategySetting,
+  overrideNeverMatchStrategy?: true,
+): Promise<C[]>
+```
+
+## Attachment Management
+
+### saveAttachmentWithServer
+
+Saves a file attachment to a cipher.
+
+```typescript
+saveAttachmentWithServer(
+  cipher: Cipher,
+  unencryptedFile: any,
+  userId: UserId,
+  admin?: boolean,
+): Promise<Cipher>
+```
+
+**Parameters:**
+- `cipher: Cipher` - The cipher to attach the file to
+- `unencryptedFile: any` - The file to attach
+- `userId: UserId` - The user ID
+- `admin?: boolean` - If true, saves as admin
+
+**Returns:** Promise resolving to updated cipher
+
+### deleteAttachmentWithServer
+
+Deletes an attachment from a cipher.
+
+```typescript
+deleteAttachmentWithServer(
+  id: string,
+  attachmentId: string,
+  userId: UserId,
+  admin: boolean,
+): Promise<CipherData>
+```
+
+## Collection Management
+
+### saveCollectionsWithServer
+
+Saves collection assignments for a cipher.
+
+```typescript
+saveCollectionsWithServer(cipher: Cipher, userId: UserId): Promise<Cipher>
+```
+
+**Parameters:**
+- `cipher: Cipher` - The cipher with updated collection IDs
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to updated cipher
+
+### bulkUpdateCollectionsWithServer
+
+Bulk updates collections for multiple ciphers.
+
+```typescript
+bulkUpdateCollectionsWithServer(
+  orgId: OrganizationId,
+  userId: UserId,
+  cipherIds: CipherId[],
+  collectionIds: CollectionId[],
+  removeCollections: boolean,
+): Promise<void>
+```
+
+**Parameters:**
+- `orgId: OrganizationId` - The organization ID
+- `userId: UserId` - The user ID
+- `cipherIds: CipherId[]` - Array of cipher IDs to update
+- `collectionIds: CollectionId[]` - Collections to add or remove
+- `removeCollections: boolean` - If true, removes collections; if false, adds them
+
+## Organization Sharing
+
+### shareWithServer
+
+Shares a cipher with an organization.
+
+```typescript
+shareWithServer(
+  cipher: CipherView,
+  organizationId: string,
+  collectionIds: string[],
+  userId: UserId,
+  originalCipher?: Cipher,
+): Promise<Cipher>
+```
+
+**Parameters:**
+- `cipher: CipherView` - The cipher to share
+- `organizationId: string` - The organization to share with
+- `collectionIds: string[]` - Collections to assign the cipher to
+- `userId: UserId` - The user ID
+- `originalCipher?: Cipher` - Optional original cipher
+
+**Returns:** Promise resolving to shared cipher
+
+### shareManyWithServer
+
+Shares multiple ciphers with an organization.
+
+```typescript
+shareManyWithServer(
+  ciphers: CipherView[],
+  organizationId: string,
+  collectionIds: string[],
+  userId: UserId,
+): Promise<any>
+```
+
+## Utility Methods
+
+### upsert
+
+Inserts or updates cipher data in local storage.
+
+```typescript
+upsert(
+  cipher: CipherData | CipherData[],
+  userId?: UserId,
+): Promise<Record<CipherId, CipherData>>
+```
+
+### clearCache
+
+Clears the decrypted cipher cache for a user.
+
+```typescript
+clearCache(userId: UserId): Promise<void>
+```
+
+### updateLastUsedDate
+
+Updates the last used date for a cipher.
+
+```typescript
+updateLastUsedDate(id: string, userId: UserId): Promise<void>
+```
+
+**Example:**
+```typescript
+// Track cipher usage for autofill prioritization
+await cipherService.updateLastUsedDate(cipherId, userId);
+```
+
+### sortCiphersByLastUsed
+
+Sorting function for ciphers by last used date.
+
+```typescript
+sortCiphersByLastUsed(a: CipherViewLike, b: CipherViewLike): number
+```
+
+### getLocaleSortingFunction
+
+Returns a locale-aware sorting function for ciphers.
+
+```typescript
+getLocaleSortingFunction(): (a: CipherViewLike, b: CipherViewLike) => number
+```
+
+## Related Types
+
+- `CipherView` - Decrypted cipher view (`libs/common/src/vault/models/view/cipher.view.ts`)
+- `Cipher` - Encrypted cipher domain model
+- `CipherData` - Raw cipher data
+- `CipherType` - Enum for cipher types (Login, SecureNote, Card, Identity, SshKey)
+- `AttachmentView` - File attachment view
+- `FieldView` - Custom field view
+
+## See Also
+
+- [Folder Service](/api/vault/folder-service) - Folder organization
+- [Collection Service](/api/vault/collection-service) - Collection management

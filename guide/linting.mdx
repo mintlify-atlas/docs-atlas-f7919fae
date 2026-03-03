@@ -1,0 +1,519 @@
+---
+title: Linting & Code Formatting
+description: ESLint and Prettier configuration for code quality and consistency
+---
+
+This guide covers the linting and code formatting setup using ESLint and Prettier.
+
+## Quick Reference
+
+### Running Linters
+
+```bash
+# Run ESLint and Prettier checks
+npm run lint
+
+# Auto-fix issues
+npm run lint:fix
+
+# Format with Prettier
+npm run prettier
+
+# Clear ESLint cache
+npm run lint:clear
+```
+
+## ESLint Configuration
+
+The project uses ESLint 9 with the new flat config format (`eslint.config.mjs`).
+
+### Base Configuration
+
+```javascript
+export default tseslint.config(
+  {
+    files: ["**/*.ts", "**/*.js"],
+    extends: [
+      eslint.configs.recommended,
+      ...tseslint.configs.recommended,
+      ...angular.configs.tsRecommended,
+      importPlugin.flatConfigs.recommended,
+      eslintConfigPrettier,  // Disables conflicting rules
+    ]
+  }
+);
+```
+
+### Plugins
+
+The following ESLint plugins are configured:
+
+- **@typescript-eslint** - TypeScript-specific rules
+- **angular-eslint** - Angular best practices
+- **eslint-plugin-import** - Import/export validation
+- **eslint-plugin-rxjs** - RxJS best practices
+- **eslint-plugin-rxjs-angular** - Angular + RxJS patterns
+- **eslint-plugin-tailwindcss** - TailwindCSS class validation
+- **eslint-plugin-storybook** - Storybook configuration
+- **@bitwarden/platform** - Custom platform rules
+- **@bitwarden/components** - Custom component rules
+
+See `eslint.config.mjs:14-38` for plugin configuration.
+
+## Code Quality Rules
+
+### General Rules
+
+#### Always Use Curly Braces
+
+```typescript
+// Required
+if (condition) {
+  doSomething();
+}
+
+// Error
+if (condition) doSomething();
+```
+
+Rule: `curly: ["error", "all"]` (line 95)
+
+#### No Console Statements
+
+```typescript
+// Error
+console.log('debug');
+console.error('error');
+
+// Use logging service instead
+logService.debug('debug');
+logService.error('error');
+```
+
+Rule: `no-console: "error"` (line 96)
+
+**Exception:** Console is allowed in `libs/nx-plugin` (line 329-333)
+
+### TypeScript Rules
+
+#### No Floating Promises
+
+All promises must be awaited or explicitly handled:
+
+```typescript
+// Good
+await userService.save(user);
+
+// Good - intentionally not awaited
+void userService.save(user);
+
+// Error
+userService.save(user);
+```
+
+Rule: `@typescript-eslint/no-floating-promises: "error"` (line 89)
+
+#### Promise Return Values
+
+Don't misuse promises in conditionals:
+
+```typescript
+// Error - promise used in if statement
+if (userService.save(user)) { }
+
+// Good
+const result = await userService.save(user);
+if (result) { }
+```
+
+Rule: `@typescript-eslint/no-misused-promises` (line 90)
+
+#### Member Accessibility
+
+Omit `public` keyword, be explicit about `private` and `protected`:
+
+```typescript
+class UserService {
+  private cache: Map<string, User>;  // Explicit private
+  
+  getUser(id: string): User {  // No 'public' needed
+    return this.cache.get(id);
+  }
+}
+```
+
+Rule: `@typescript-eslint/explicit-member-accessibility` (line 87)
+
+#### Unused Variables
+
+Unused function arguments are allowed (useful for interfaces):
+
+```typescript
+// Allowed
+array.map((_, index) => index);
+
+function handler(error: Error, data: Data) {
+  return data;  // 'error' unused but required
+}
+```
+
+Rule: `@typescript-eslint/no-unused-vars: ["error", { args: "none" }]` (line 93)
+
+## Import Rules
+
+### Import Ordering
+
+Imports must be alphabetically sorted with newlines between groups:
+
+```typescript
+// Built-in/external packages
+import { Component } from '@angular/core';
+import { FormBuilder } from '@angular/forms';
+
+// @bitwarden packages
+import { CryptoService } from '@bitwarden/common/platform/abstractions/crypto.service';
+import { I18nService } from '@bitwarden/common/platform/abstractions/i18n.service';
+
+// Relative imports
+import { UserService } from 'src/app/services/user.service';
+```
+
+Rule: `import/order` (line 98-119)
+
+Order:
+1. External packages (alphabetically)
+2. `@bitwarden/*` packages (alphabetically)
+3. `src/**` relative imports (alphabetically)
+4. Blank lines required between groups
+
+### Restricted Imports
+
+The project enforces strict import boundaries to prevent circular dependencies.
+
+#### Architecture Layers
+
+Libs cannot import from apps:
+
+```javascript
+{
+  target: ["libs/**/*"],
+  from: ["apps/**/*"],
+  message: "Libs should not import app-specific code."
+}
+```
+
+See `eslint.config.mjs:121-171` for path restrictions.
+
+#### Library Dependencies
+
+Each library has specific allowed dependencies:
+
+**Common library** - Base layer, cannot import from other libs:
+```javascript
+// libs/common/src - CANNOT import:
+"@bitwarden/admin-console"
+"@bitwarden/auth"
+"@bitwarden/components"
+// ... etc
+```
+
+See `eslint.config.mjs:363-605` for complete dependency graph.
+
+**Example violations:**
+```typescript
+// In libs/common/src - ERROR
+import { AdminService } from '@bitwarden/admin-console';
+
+// In libs/components/src - ERROR  
+import { VaultService } from '@bitwarden/vault';
+```
+
+### Forbidden Patterns
+
+Do not import from `src/**` across package boundaries:
+
+```javascript
+patterns: [
+  "**/src/**/*",  // Prevent relative imports across libs
+]
+```
+
+Rule: `no-restricted-imports` (line 246-248, 696-711)
+
+## Custom Bitwarden Rules
+
+### Platform Rules
+
+#### Required Using Statement
+
+Must use `using` for disposable resources:
+
+```typescript
+// Good
+using resource = await getDisposableResource();
+
+// Error
+const resource = await getDisposableResource();
+// Must manually dispose
+```
+
+Rule: `@bitwarden/platform/required-using: "error"` (line 82)
+
+#### No Enums
+
+Prefer unions or const objects over enums:
+
+```typescript
+// Error
+enum Status {
+  Active,
+  Inactive
+}
+
+// Good - union type
+type Status = 'active' | 'inactive';
+
+// Good - const object
+const Status = {
+  Active: 'active',
+  Inactive: 'inactive'
+} as const;
+```
+
+Rule: `@bitwarden/platform/no-enums: "error"` (line 83)
+
+#### No Page Script URL Leakage
+
+Prevents URL leakage in browser extension context.
+
+Rule: `@bitwarden/platform/no-page-script-url-leakage: "error"` (line 84)
+
+### Component Rules
+
+#### Theme Colors in SVG
+
+SVGs must use theme color variables:
+
+```html
+<!-- Error -->
+<svg><path fill="#000000" /></svg>
+
+<!-- Good -->
+<svg><path fill="var(--color-text-main)" /></svg>
+```
+
+Rule: `@bitwarden/components/require-theme-colors-in-svg: "error"` (line 85)
+
+See [Angular Patterns](/guide/angular-patterns) for more component rules.
+
+## Browser Extension Rules
+
+### Memory Leak Prevention
+
+Don't use `addListener` directly in popup context (Safari memory leak):
+
+```typescript
+// Error in popup context
+chrome.storage.onChanged.addListener(callback);
+
+// Good - use wrapper
+BrowserApi.addListener(chrome.storage.onChanged, callback);
+```
+
+Rule: `no-restricted-syntax` (line 224-240)
+
+See `eslint.config.mjs:216-242` for full configuration.
+
+### Background Script Globals
+
+Background scripts cannot use `window` (service worker context):
+
+```typescript
+// Error in background scripts
+const width = window.innerWidth;
+
+// Good - use alternatives
+const width = self.innerWidth;
+const width = globalThis.innerWidth;
+```
+
+Rule: `no-restricted-globals` (line 260-267)
+
+## Template Linting
+
+### TailwindCSS Validation
+
+All `tw-*` classes must be valid TailwindCSS classes:
+
+```html
+<!-- Error -->
+<div class="tw-invalid-class">Content</div>
+
+<!-- Good -->
+<div class="tw-flex tw-items-center">Content</div>
+
+<!-- Allowed - non-tw classes bypass validation -->
+<div class="custom-class logo">Content</div>
+```
+
+Rule: `tailwindcss/no-custom-classname` (line 195-202, 343-358)
+
+**Whitelisted non-Tailwind classes:**
+- `bwi-*` - Font icons
+- `logo`, `logo-themed`
+- `file-selector`
+- `mfaType*`
+- `filter*` (temporary)
+- `tw-app-region*`
+
+### Enforced Tailwind Patterns
+
+```html
+<!-- Error - positive arbitrary instead of negative -->
+<div class="tw-top-[10px]"></div>
+
+<!-- Good -->
+<div class="tw--top-[10px]"></div>
+```
+
+Rules:
+- `tailwindcss/enforces-negative-arbitrary-values: "error"` (line 203)
+- `tailwindcss/enforces-shorthand: "error"` (line 204)
+- `tailwindcss/no-contradicting-classname: "error"` (line 205)
+
+See `eslint.config.mjs:175-213` for template configuration.
+
+## Prettier Configuration
+
+Prettier is configured in `.prettierrc.json`:
+
+```json
+{
+  "printWidth": 100,
+  "overrides": [
+    {
+      "files": "*.mdx",
+      "options": {
+        "proseWrap": "always"
+      }
+    }
+  ]
+}
+```
+
+**Settings:**
+- **Print width:** 100 characters
+- **MDX files:** Always wrap prose
+
+### Integration with ESLint
+
+`eslint-config-prettier` disables ESLint formatting rules that conflict with Prettier:
+
+```javascript
+extends: [
+  // ... other configs
+  eslintConfigPrettier,  // Must be last
+]
+```
+
+This prevents conflicts between ESLint and Prettier formatting.
+
+## State Migration Rules
+
+State migrations have special import restrictions to prevent breakage:
+
+```javascript
+{
+  target: ["libs/common/src/state-migrations/**/*.ts"],
+  rules: {
+    "import/no-restricted-paths": [
+      "error",
+      {
+        zones: [{
+          target: "./",
+          from: "../",
+          except: ["state-migrations"]
+        }]
+      }
+    ]
+  }
+}
+```
+
+Migrations should rarely import from the main codebase to avoid future breaking changes. See `eslint.config.mjs:633-652`.
+
+## Ignored Files
+
+The following paths are excluded from linting:
+
+```javascript
+ignores: [
+  "**/build/",
+  "**/dist/",
+  "**/coverage/",
+  ".angular/",
+  "storybook-static/",
+  "**/node_modules/",
+  "**/webpack.*.js",
+  "**/jest.config.js",
+  "tailwind.config.js"
+]
+```
+
+See `eslint.config.mjs:655-688` for the complete list.
+
+## Cache Strategy
+
+ESLint uses content-based caching for better performance:
+
+```bash
+# From package.json:17-18
+npm run lint       # Uses cache based on file content
+npm run lint:fix   # Auto-fix with caching
+```
+
+**Cache file:** `.eslintcache` (gitignored)
+
+## Linter Options
+
+### Unused Disable Directives
+
+Unused `eslint-disable` comments are treated as errors:
+
+```javascript
+linterOptions: {
+  reportUnusedDisableDirectives: "error"
+}
+```
+
+This prevents commented-out disable directives from being left in the code.
+
+## Parser Configuration
+
+### TypeScript Files
+
+```javascript
+languageOptions: {
+  parserOptions: {
+    project: ["./tsconfig.eslint.json"],
+    sourceType: "module",
+    ecmaVersion: 2020
+  }
+}
+```
+
+### HTML Templates
+
+```javascript
+languageOptions: {
+  parser: angular.templateParser
+}
+```
+
+Templates use Angular's specialized parser for template syntax.
+
+## Next Steps
+
+- Review [TypeScript Style Guide](/guide/typescript-style) for TypeScript patterns
+- See [Angular Patterns](/guide/angular-patterns) for Angular-specific rules
+- Check [Architecture](/architecture) for import boundary rationale

@@ -1,0 +1,610 @@
+---
+title: Angular Library
+description: Shared Angular components, directives, pipes, and services for Angular-based clients
+---
+
+The `@bitwarden/angular` library provides shared Angular-specific code used across the Web, Desktop, and Browser extension clients. It includes reusable components, directives, pipes, and Angular-specific service implementations.
+
+## Library Structure
+
+The Angular library is organized by feature domain and Angular artifact type:
+
+```
+libs/angular/src/
+├── admin-console/         # Admin console components
+├── auth/                  # Authentication components & guards
+├── billing/              # Billing components
+├── components/           # Shared components
+├── directives/           # Shared directives
+├── pipes/                # Shared pipes
+├── platform/             # Platform services & guards
+├── services/             # Angular service implementations
+├── tools/                # Tool-specific components
+├── utils/                # Angular utilities
+├── vault/                # Vault components
+├── jslib.module.ts       # Main module (deprecated)
+└── types/                # TypeScript types
+```
+
+## Components
+
+<CardGroup cols={2}>
+  <Card title="Directives" icon="code">
+    Reusable attribute and structural directives for common behaviors
+  </Card>
+  
+  <Card title="Pipes" icon="filter">
+    Data transformation pipes for templates
+  </Card>
+  
+  <Card title="Components" icon="window">
+    Shared UI components used across Angular applications
+  </Card>
+  
+  <Card title="Guards" icon="shield">
+    Route guards for authentication and authorization
+  </Card>
+</CardGroup>
+
+## Directives
+
+The Angular library provides several utility directives for common use cases.
+
+### Feature Flag Directive
+
+Conditionally render elements based on feature flags:
+
+```typescript
+// libs/angular/src/directives/if-feature.directive.ts
+import { Directive, Input, TemplateRef, ViewContainerRef } from '@angular/core';
+import { FeatureFlag } from '@bitwarden/common/enums/feature-flag.enum';
+
+@Directive({
+  selector: '[appIfFeature]',
+  standalone: true
+})
+export class IfFeatureDirective {
+  @Input() appIfFeature: FeatureFlag;
+  @Input() appIfFeatureValue?: boolean | string | number = true;
+  
+  // Conditionally renders based on feature flag status
+}
+```
+
+**Usage:**
+
+```html
+<!-- Show element only if feature is enabled -->
+<div *appIfFeature="'new-vault-ui'">
+  New vault interface
+</div>
+
+<!-- Show element only if feature has specific value -->
+<div *appIfFeature="'theme-variant'" [appIfFeatureValue]="'dark'">
+  Dark theme content
+</div>
+```
+
+### Event Handling Directives
+
+<CodeGroup>
+```typescript Stop Propagation
+// Stop event propagation
+@Directive({
+  selector: '[appStopProp]',
+  standalone: true
+})
+export class StopPropDirective {
+  @HostListener('click', ['$event'])
+  onClick($event: MouseEvent) {
+    $event.stopPropagation();
+  }
+}
+```
+
+```typescript Stop Click
+// Prevent default click behavior
+@Directive({
+  selector: '[appStopClick]',
+  standalone: true
+})
+export class StopClickDirective {
+  @HostListener('click', ['$event'])
+  onClick($event: MouseEvent) {
+    $event.preventDefault();
+    $event.stopPropagation();
+  }
+}
+```
+
+```typescript Launch Click
+// Open links in external browser
+@Directive({
+  selector: '[appLaunchClick]',
+  standalone: true
+})
+export class LaunchClickDirective {
+  @HostListener('click', ['$event'])
+  onClick($event: MouseEvent) {
+    // Opens link in system browser
+  }
+}
+```
+</CodeGroup>
+
+**Usage:**
+
+```html
+<!-- Prevent event bubbling -->
+<button appStopProp>Don't bubble</button>
+
+<!-- Prevent default action -->
+<a href="#" appStopClick>No navigation</a>
+
+<!-- Open in external browser (Desktop/Browser extension) -->
+<a href="https://bitwarden.com" appLaunchClick>Open externally</a>
+```
+
+### Input Directives
+
+<AccordionGroup>
+  <Accordion title="Input Strip Spaces">
+    Automatically removes leading and trailing whitespace from input values:
+    
+    ```typescript
+    @Directive({
+      selector: '[appInputStripSpaces]',
+      standalone: true
+    })
+    export class InputStripSpacesDirective {
+      // Strips spaces on input
+    }
+    ```
+    
+    **Usage:**
+    ```html
+    <input type="text" appInputStripSpaces [(ngModel)]="email" />
+    ```
+  </Accordion>
+  
+  <Accordion title="Input Verbatim">
+    Prevents autocomplete, autocorrect, and other browser input modifications:
+    
+    ```typescript
+    @Directive({
+      selector: '[appInputVerbatim]',
+      standalone: true
+    })
+    export class InputVerbatimDirective {
+      // Disables autocomplete, autocorrect, etc.
+    }
+    ```
+    
+    **Usage:**
+    ```html
+    <input type="password" appInputVerbatim />
+    ```
+  </Accordion>
+  
+  <Accordion title="Text Drag">
+    Enables drag-and-drop for text content:
+    
+    ```typescript
+    @Directive({
+      selector: '[appTextDrag]',
+      standalone: true
+    })
+    export class TextDragDirective {
+      @Input() appTextDrag: string;
+      // Enables dragging text
+    }
+    ```
+    
+    **Usage:**
+    ```html
+    <span [appTextDrag]="password">Drag me</span>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Other Directives
+
+```typescript
+// API action with loading state
+@Directive({ selector: '[appApiAction]' })
+export class ApiActionDirective {
+  // Handles loading states for async operations
+}
+
+// Box row styling
+@Directive({ selector: '[appBoxRow]' })
+export class BoxRowDirective {
+  // Applies box row styles
+}
+
+// Virtual scroll for cipher lists
+@Directive({ selector: '[cipherListVirtualScroll]' })
+export class CipherListVirtualScrollDirective {
+  // Optimizes rendering of large cipher lists
+}
+```
+
+## Pipes
+
+Transformation pipes for displaying data in templates.
+
+### Search Pipe
+
+Filters arrays based on search terms:
+
+```typescript
+// libs/angular/src/pipes/search.pipe.ts
+@Pipe({
+  name: 'search',
+  standalone: false
+})
+export class SearchPipe implements PipeTransform {
+  transform(items: any[], searchText: string, prop1?: string, prop2?: string): any[] {
+    // Filters items based on search text
+  }
+}
+```
+
+**Usage:**
+
+```html
+<div *ngFor="let item of items | search:searchText:'name':'email'">
+  {{ item.name }}
+</div>
+```
+
+### User Pipes
+
+<CodeGroup>
+```typescript User Name
+@Pipe({
+  name: 'userName',
+  standalone: true
+})
+export class UserNamePipe implements PipeTransform {
+  transform(user: OrganizationUserView): string {
+    return user?.name ?? user?.email ?? '-';
+  }
+}
+```
+
+```typescript User Type
+@Pipe({
+  name: 'userType',
+  standalone: true
+})
+export class UserTypePipe implements PipeTransform {
+  transform(type: OrganizationUserType): string {
+    // Returns user-friendly type name
+  }
+}
+```
+</CodeGroup>
+
+### Formatting Pipes
+
+```typescript
+// Credit card number formatting
+@Pipe({ name: 'creditCardNumber' })
+export class CreditCardNumberPipe implements PipeTransform {
+  transform(value: string): string {
+    // Formats: 1234567812345678 -> 1234 5678 1234 5678
+  }
+}
+
+// Password strength color
+@Pipe({ name: 'colorPassword' })
+export class ColorPasswordPipe implements PipeTransform {
+  transform(score: number): string {
+    // Returns color based on password strength
+  }
+}
+
+// Pluralization
+@Pipe({ name: 'pluralize' })
+export class PluralizePipe implements PipeTransform {
+  transform(count: number, singular: string, plural?: string): string {
+    // Returns singular or plural form
+  }
+}
+```
+
+## Services
+
+Angular-specific service implementations and utilities.
+
+### Modal Service
+
+Manages modal dialogs across the application:
+
+```typescript
+// libs/angular/src/services/modal.service.ts
+export class ModalService {
+  async openViewRef(
+    componentType: Type<any>,
+    viewContainerRef: ViewContainerRef,
+    setComponentParameters?: (component: any) => void
+  ): Promise<[ModalRef, any]> {
+    // Opens a modal component
+  }
+}
+```
+
+**Usage:**
+
+```typescript
+import { ModalService } from '@bitwarden/angular/services/modal.service';
+
+@Component({ ... })
+export class MyComponent {
+  constructor(private modalService: ModalService) {}
+  
+  async openDialog() {
+    const [modalRef, component] = await this.modalService.openViewRef(
+      PasswordGeneratorComponent,
+      this.viewContainerRef
+    );
+    
+    const result = await modalRef.onClosed;
+  }
+}
+```
+
+### Jslib Services Module
+
+Provides dependency injection configuration for common services:
+
+```typescript
+// libs/angular/src/services/jslib-services.module.ts
+@NgModule({
+  providers: [
+    // Platform services
+    { provide: WINDOW, useValue: window },
+    // ... service providers
+  ]
+})
+export class JslibServicesModule {}
+```
+
+## Auth Components & Guards
+
+### Authentication Guards
+
+```typescript
+// libs/angular/src/auth/guards/auth.guard.ts
+export class AuthGuard implements CanActivate {
+  async canActivate(route: ActivatedRouteSnapshot): Promise<boolean> {
+    const authStatus = await this.authService.getAuthStatus();
+    
+    if (authStatus === AuthenticationStatus.Unlocked) {
+      return true;
+    }
+    
+    this.router.navigate(['/login']);
+    return false;
+  }
+}
+```
+
+**Usage:**
+
+```typescript
+const routes: Routes = [
+  {
+    path: 'vault',
+    component: VaultComponent,
+    canActivate: [AuthGuard]
+  }
+];
+```
+
+### Two-Factor Components
+
+```typescript
+// libs/angular/src/auth/components/two-factor-icon.component.ts
+@Component({
+  selector: 'app-two-factor-icon',
+  template: `
+    <i class="bwi bwi-{{ icon }}" [title]="title"></i>
+  `
+})
+export class TwoFactorIconComponent {
+  @Input() type: TwoFactorProviderType;
+  
+  get icon(): string {
+    // Returns appropriate icon for 2FA type
+  }
+}
+```
+
+## Vault Components
+
+### Icon Component
+
+Displays favicons for vault items:
+
+```typescript
+// libs/angular/src/vault/components/icon.component.ts
+@Component({
+  selector: 'app-vault-icon',
+  templateUrl: 'icon.component.html',
+  standalone: true
+})
+export class IconComponent {
+  @Input() cipher: CipherView;
+  
+  get iconUrl(): string {
+    // Returns appropriate icon URL
+  }
+}
+```
+
+**Usage:**
+
+```html
+<app-vault-icon [cipher]="cipher"></app-vault-icon>
+```
+
+### Vault Items Component
+
+```typescript
+@Component({
+  selector: 'app-vault-items',
+  templateUrl: 'vault-items.component.html'
+})
+export class VaultItemsComponent {
+  @Input() ciphers: CipherView[];
+  @Output() onSelected = new EventEmitter<CipherView>();
+  
+  // Displays list of vault items with virtual scrolling
+}
+```
+
+## Billing Components
+
+```typescript
+// Premium upgrade directive
+@Directive({
+  selector: '[appNotPremium]'
+})
+export class NotPremiumDirective {
+  // Shows premium upgrade prompt for non-premium users
+}
+```
+
+## JslibModule (Deprecated)
+
+The `JslibModule` bundles commonly used Angular artifacts, but is deprecated in favor of importing standalone components directly.
+
+```typescript
+// libs/angular/src/jslib.module.ts
+@NgModule({
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    // Bitwarden component library
+    ButtonModule,
+    DialogModule,
+    FormFieldModule,
+    // Standalone directives/pipes
+    IfFeatureDirective,
+    UserNamePipe,
+    // ...
+  ],
+  declarations: [
+    ApiActionDirective,
+    BoxRowDirective,
+    SearchPipe,
+    TwoFactorIconComponent
+  ],
+  exports: [/* ... */]
+})
+export class JslibModule {}
+```
+
+**Migration:** Import components directly instead of using `JslibModule`:
+
+```typescript
+// Old (deprecated)
+import { JslibModule } from '@bitwarden/angular/jslib.module';
+
+// New (recommended)
+import { IfFeatureDirective } from '@bitwarden/angular/directives/if-feature.directive';
+import { UserNamePipe } from '@bitwarden/angular/pipes/user-name.pipe';
+```
+
+## Platform Services
+
+### Theme Service
+
+Manages application theming:
+
+```typescript
+import { ThemeType } from '@bitwarden/common/platform/enums';
+
+export class ThemeService {
+  async setTheme(theme: ThemeType): Promise<void> {
+    // Apply theme to application
+  }
+}
+```
+
+## Import Examples
+
+```typescript
+// Directives
+import { IfFeatureDirective } from '@bitwarden/angular/directives/if-feature.directive';
+import { StopPropDirective } from '@bitwarden/angular/directives/stop-prop.directive';
+
+// Pipes
+import { UserNamePipe } from '@bitwarden/angular/pipes/user-name.pipe';
+import { SearchPipe } from '@bitwarden/angular/pipes/search.pipe';
+
+// Services
+import { ModalService } from '@bitwarden/angular/services/modal.service';
+
+// Guards
+import { AuthGuard } from '@bitwarden/angular/auth/guards/auth.guard';
+
+// Components
+import { IconComponent } from '@bitwarden/angular/vault/components/icon.component';
+import { TwoFactorIconComponent } from '@bitwarden/angular/auth/components/two-factor-icon.component';
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Prefer Standalone Components">
+    New components should be created as standalone to avoid dependency on the deprecated `JslibModule`:
+    
+    ```typescript
+    @Directive({
+      selector: '[myDirective]',
+      standalone: true  // Preferred
+    })
+    export class MyDirective {}
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Type-Safe Imports">
+    Import specific directives and pipes rather than importing entire modules:
+    
+    ```typescript
+    // Good
+    import { IfFeatureDirective } from '@bitwarden/angular/directives/if-feature.directive';
+    
+    // Avoid
+    import { JslibModule } from '@bitwarden/angular/jslib.module';
+    ```
+  </Accordion>
+  
+  <Accordion title="Follow Angular Style Guide">
+    Follow the official Angular style guide for component architecture, naming conventions, and project structure.
+  </Accordion>
+</AccordionGroup>
+
+## Related Libraries
+
+<CardGroup cols={2}>
+  <Card title="Components Library" icon="palette">
+    `@bitwarden/components` - Shared design system components
+  </Card>
+  
+  <Card title="Common Library" icon="box">
+    `@bitwarden/common` - Platform-agnostic services and models
+  </Card>
+  
+  <Card title="Auth Angular" icon="lock">
+    `@bitwarden/auth/angular` - Authentication-specific Angular components
+  </Card>
+  
+  <Card title="UI Common" icon="window">
+    `@bitwarden/ui-common` - Common UI utilities and helpers
+  </Card>
+</CardGroup>

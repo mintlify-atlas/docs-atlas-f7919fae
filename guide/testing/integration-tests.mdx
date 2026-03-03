@@ -1,0 +1,486 @@
+---
+title: Integration Testing
+description: Integration test patterns and service testing strategies
+---
+
+## Overview
+
+Integration tests in the Bitwarden clients repository verify that multiple components work together correctly. These tests use the same Jest framework as unit tests but focus on testing service interactions, API integrations, and data flow between components.
+
+## Integration Test Patterns
+
+While the repository uses `.spec.ts` for all Jest tests, integration tests differ from unit tests by:
+
+- Testing multiple services together
+- Using real implementations where possible
+- Verifying end-to-end data flow
+- Testing API service interactions
+
+## Service Integration Tests
+
+### Import Service Example
+
+Example from `libs/importer/src/services/import.service.spec.ts`:
+
+```typescript
+import { mock, MockProxy } from "jest-mock-extended";
+import { CipherService } from "@bitwarden/common/vault/abstractions/cipher.service";
+import { FolderService } from "@bitwarden/common/vault/abstractions/folder/folder.service.abstraction";
+import { CollectionService } from "@bitwarden/admin-console/common";
+import { ImportService } from "./import.service";
+import { BitwardenPasswordProtectedImporter } from "../importers/bitwarden/bitwarden-password-protected-importer";
+
+describe("ImportService", () => {
+  let importService: ImportService;
+  let cipherService: MockProxy<CipherService>;
+  let folderService: MockProxy<FolderService>;
+  let collectionService: MockProxy<CollectionService>;
+  let importApiService: MockProxy<ImportApiServiceAbstraction>;
+  
+  beforeEach(() => {
+    cipherService = mock<CipherService>();
+    folderService = mock<FolderService>();
+    collectionService = mock<CollectionService>();
+    importApiService = mock<ImportApiServiceAbstraction>();
+    
+    importService = new ImportService(
+      cipherService,
+      folderService,
+      importApiService,
+      i18nService,
+      collectionService,
+      keyService,
+      encryptService,
+      keyGenerationService,
+      accountService,
+      restrictedItemTypesService,
+    );
+  });
+  
+  describe("getImporterInstance", () => {
+    it("returns an instance of BitwardenPasswordProtectedImporter", () => {
+      const organizationId = Utils.newGuid() as OrganizationId;
+      const password = "password123";
+      const promptCallback = async () => password;
+      
+      const importer = importService.getImporter(
+        "bitwardenpasswordprotected",
+        promptCallback,
+        organizationId
+      );
+      
+      expect(importer).toBeInstanceOf(BitwardenPasswordProtectedImporter);
+      expect(importer.organizationId).toEqual(organizationId);
+    });
+  });
+  
+  describe("import", () => {
+    it("imports ciphers, folders, and collections", async () => {
+      const importResult = new ImportResult();
+      importResult.ciphers = [mockCipherView1, mockCipherView2];
+      importResult.folders = [mockFolderView];
+      importResult.collections = [mockCollectionView];
+      
+      cipherService.getAllDecrypted.mockResolvedValue([]);
+      folderService.getAllDecrypted.mockResolvedValue([]);
+      
+      await importService.import(importer, importResult);
+      
+      expect(cipherService.upsert).toHaveBeenCalledTimes(2);
+      expect(folderService.upsert).toHaveBeenCalledTimes(1);
+      expect(collectionService.upsert).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+```
+
+## Testing Multi-Service Workflows
+
+### Account Service Integration
+
+Using the `FakeAccountService` from test utilities:
+
+```typescript
+import { mockAccountServiceWith } from "@bitwarden/common/spec/fake-account-service";
+
+describe("Multi-service workflow", () => {
+  let accountService: FakeAccountService;
+  let billingService: MockProxy<BillingAccountProfileStateService>;
+  let userService: UserService;
+  
+  beforeEach(() => {
+    const userId = Utils.newGuid() as UserId;
+    
+    // Use real FakeAccountService implementation
+    accountService = mockAccountServiceWith(userId, {
+      name: "Test User",
+      email: "test@example.com",
+      emailVerified: true,
+    });
+    
+    billingService = mock<BillingAccountProfileStateService>();
+    billingService.hasPremiumFromAnySource$.mockReturnValue(of(true));
+    
+    // Service under test uses real accountService
+    userService = new UserService(
+      accountService,
+      billingService,
+      // ... other dependencies
+    );
+  });
+  
+  it("handles account switching workflow", async () => {
+    const newUserId = Utils.newGuid() as UserId;
+    
+    // Add a new account
+    await accountService.addAccount(newUserId, {
+      name: "Second User",
+      email: "second@example.com",
+      emailVerified: false,
+    });
+    
+    // Switch to the new account
+    await accountService.switchAccount(newUserId);
+    
+    // Verify the active account changed
+    accountService.activeAccount$.subscribe((account) => {
+      expect(account.id).toBe(newUserId);
+      expect(account.email).toBe("second@example.com");
+    });
+  });
+});
+```
+
+## API Service Integration Tests
+
+### Testing API Calls
+
+```typescript
+import { mock, MockProxy } from "jest-mock-extended";
+import { ApiService } from "@bitwarden/common/abstractions/api.service";
+import { OrganizationIntegrationApiService } from "./organization-integration-api.service";
+
+describe("OrganizationIntegrationApiService", () => {
+  let apiService: MockProxy<ApiService>;
+  let integrationApiService: OrganizationIntegrationApiService;
+  
+  beforeEach(() => {
+    apiService = mock<ApiService>();
+    integrationApiService = new OrganizationIntegrationApiService(apiService);
+  });
+  
+  describe("getIntegration", () => {
+    it("calls the correct API endpoint", async () => {
+      const orgId = "org-id";
+      const integrationId = "integration-id";
+      const mockResponse = { id: integrationId, name: "Test Integration" };
+      
+      apiService.send.mockResolvedValue(mockResponse);
+      
+      const result = await integrationApiService.getIntegration(
+        orgId,
+        integrationId
+      );
+      
+      expect(apiService.send).toHaveBeenCalledWith(
+        "GET",
+        `/organizations/${orgId}/integrations/${integrationId}`,
+        null,
+        true,
+        true
+      );
+      expect(result).toEqual(mockResponse);
+    });
+  });
+  
+  describe("createIntegration", () => {
+    it("sends correct request payload", async () => {
+      const orgId = "org-id";
+      const request = {
+        name: "New Integration",
+        type: IntegrationType.Webhook,
+        configuration: { url: "https://example.com" },
+      };
+      
+      apiService.send.mockResolvedValue({ id: "new-id", ...request });
+      
+      await integrationApiService.createIntegration(orgId, request);
+      
+      expect(apiService.send).toHaveBeenCalledWith(
+        "POST",
+        `/organizations/${orgId}/integrations`,
+        request,
+        true,
+        true
+      );
+    });
+  });
+});
+```
+
+## Testing State Management
+
+### State Service Integration
+
+```typescript
+import { FakeStateProvider } from "@bitwarden/common/spec/fake-state-provider";
+import { UserKeyDefinition } from "@bitwarden/common/platform/state";
+
+describe("State integration", () => {
+  let stateProvider: FakeStateProvider;
+  let myService: MyService;
+  
+  const MY_KEY = new UserKeyDefinition<string>("myKey", {
+    deserializer: (s) => s,
+    clearOn: [],
+  });
+  
+  beforeEach(() => {
+    stateProvider = new FakeStateProvider();
+    myService = new MyService(stateProvider);
+  });
+  
+  it("persists and retrieves state", async () => {
+    const userId = "user-123" as UserId;
+    const state = stateProvider.singleUser.getFake(userId, MY_KEY);
+    
+    // Set initial state
+    await myService.setValue(userId, "test-value");
+    
+    // Verify state was updated
+    expect(state.nextMock).toHaveBeenCalledWith("test-value");
+    
+    // Retrieve state
+    const value = await myService.getValue(userId);
+    expect(value).toBe("test-value");
+  });
+});
+```
+
+## Testing Data Importers
+
+### Importer Integration Tests
+
+Example testing various importers:
+
+```typescript
+import { LastPassCsvImporter } from "./lastpass-csv-importer";
+import { OnePassword1PuxImporter } from "./onepassword-1pux-importer";
+import { DashlaneCsvImporter } from "./dashlane-csv-importer";
+
+describe("CSV Importer Integration", () => {
+  describe("LastPass", () => {
+    let importer: LastPassCsvImporter;
+    
+    beforeEach(() => {
+      importer = new LastPassCsvImporter();
+    });
+    
+    it("imports login items with custom fields", async () => {
+      const csv = `
+        url,username,password,extra,name,grouping,fav
+        https://example.com,user@test.com,pass123,notes here,Example Site,Work,0
+      `;
+      
+      const result = await importer.parse(csv);
+      
+      expect(result.success).toBe(true);
+      expect(result.ciphers).toHaveLength(1);
+      expect(result.ciphers[0].login.username).toBe("user@test.com");
+      expect(result.ciphers[0].login.password).toBe("pass123");
+      expect(result.ciphers[0].notes).toBe("notes here");
+      expect(result.ciphers[0].name).toBe("Example Site");
+      expect(result.folders[0].name).toBe("Work");
+    });
+  });
+  
+  describe("1Password 1Pux", () => {
+    let importer: OnePassword1PuxImporter;
+    
+    beforeEach(() => {
+      importer = new OnePassword1PuxImporter();
+    });
+    
+    it("imports vaults and items with attachments", async () => {
+      const jsonData = JSON.stringify({
+        accounts: [{
+          vaults: [{
+            items: [{
+              title: "Test Login",
+              fields: [{ id: "username", value: "testuser" }],
+              files: [{ name: "attachment.pdf", content: "base64data" }],
+            }],
+          }],
+        }],
+      });
+      
+      const result = await importer.parse(jsonData);
+      
+      expect(result.success).toBe(true);
+      expect(result.ciphers[0].name).toBe("Test Login");
+      expect(result.ciphers[0].attachments).toHaveLength(1);
+    });
+  });
+});
+```
+
+## Testing RxJS Observables
+
+### Observable Chain Testing
+
+```typescript
+import { TestScheduler } from "rxjs/testing";
+import { take } from "rxjs/operators";
+
+describe("Observable integration", () => {
+  let scheduler: TestScheduler;
+  
+  beforeEach(() => {
+    scheduler = new TestScheduler((actual, expected) => {
+      expect(actual).toEqual(expected);
+    });
+  });
+  
+  it("combines multiple observables correctly", () => {
+    scheduler.run(({ cold, expectObservable }) => {
+      const account$ = cold("a-b-c", {
+        a: { id: "1", email: "user1@test.com" },
+        b: { id: "2", email: "user2@test.com" },
+        c: { id: "3", email: "user3@test.com" },
+      });
+      
+      const billing$ = cold("x-y-z", {
+        x: { premium: true },
+        y: { premium: false },
+        z: { premium: true },
+      });
+      
+      const combined$ = combineLatest([account$, billing$]).pipe(
+        map(([account, billing]) => ({ 
+          ...account, 
+          hasPremium: billing.premium 
+        }))
+      );
+      
+      expectObservable(combined$).toBe("(ab)(cd)(ef)", {
+        a: { id: "1", email: "user1@test.com", hasPremium: true },
+        // ... expected values
+      });
+    });
+  });
+});
+```
+
+## Best Practices
+
+### 1. Minimize Mocking
+
+- Use real implementations of simple utilities and models
+- Only mock external dependencies (API, storage, crypto)
+- Use test utilities like `FakeAccountService` when available
+
+### 2. Test Realistic Scenarios
+
+```typescript
+it("handles complete user workflow", async () => {
+  // 1. User logs in
+  await authService.login("user@test.com", "password");
+  
+  // 2. Sync vault data
+  await syncService.fullSync();
+  
+  // 3. Add new cipher
+  const cipher = await cipherService.encrypt(newCipherView);
+  await cipherService.saveWithServer(cipher);
+  
+  // 4. Verify cipher appears in vault
+  const allCiphers = await cipherService.getAllDecrypted();
+  expect(allCiphers).toContainEqual(expect.objectContaining({
+    name: newCipherView.name,
+  }));
+});
+```
+
+### 3. Test Error Handling
+
+```typescript
+it("handles API errors gracefully", async () => {
+  apiService.send.mockRejectedValue(new Error("Network error"));
+  
+  await expect(service.fetchData()).rejects.toThrow("Network error");
+  expect(errorService.logError).toHaveBeenCalled();
+});
+```
+
+### 4. Verify Side Effects
+
+```typescript
+it("updates state and notifies subscribers", async () => {
+  const subscriber = jest.fn();
+  service.stateChanges$.subscribe(subscriber);
+  
+  await service.updateState(newValue);
+  
+  expect(subscriber).toHaveBeenCalledWith(newValue);
+  expect(storageService.save).toHaveBeenCalledWith("key", newValue);
+});
+```
+
+## Running Integration Tests
+
+```bash
+# Run all tests (includes integration tests)
+npm test
+
+# Run tests for specific library
+npm test -- --project=libs/importer
+
+# Watch mode for development
+npm run test:watch -- --project=libs/common
+
+# Run with coverage
+npm test -- --coverage
+```
+
+## Troubleshooting
+
+### Async Timing Issues
+
+Use `waitFor` or `done` callbacks:
+
+```typescript
+it("emits value eventually", (done) => {
+  service.observable$.pipe(take(1)).subscribe((value) => {
+    expect(value).toBeDefined();
+    done();
+  });
+  
+  service.triggerEmit();
+});
+```
+
+### Mock Reset Issues
+
+Always reset mocks between tests:
+
+```typescript
+afterEach(() => {
+  jest.clearAllMocks();
+});
+```
+
+### Observable Memory Leaks
+
+Always unsubscribe in tests:
+
+```typescript
+let subscription: Subscription;
+
+afterEach(() => {
+  subscription?.unsubscribe();
+});
+
+it("tests observable", () => {
+  subscription = observable$.subscribe(...);
+});
+```

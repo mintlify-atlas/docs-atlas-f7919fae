@@ -1,0 +1,555 @@
+---
+title: "Key Management"
+description: "Key derivation, storage, and lifecycle management in Bitwarden"
+---
+
+## Overview
+
+The `@bitwarden/key-management` library provides comprehensive key management services including key generation, derivation, storage, and rotation. All cryptographic keys follow a strict lifecycle to ensure security.
+
+## Key Management Library
+
+The key management library is located at `libs/key-management/` and exports services through the `@bitwarden/key-management` module.
+
+### Core Services
+
+#### KeyService
+
+The primary service for all key operations:
+
+```typescript
+// From libs/key-management/src/abstractions/key.service.ts
+export abstract class KeyService {
+  // User key management
+  abstract userKey$(userId: UserId): Observable<UserKey | null>;
+  abstract setUserKey(key: UserKey, userId: UserId): Promise<void>;
+  abstract getUserKeyFromStorage(keySuffix: KeySuffixOptions, userId: string): Promise<UserKey | null>;
+  
+  // Organization keys
+  abstract orgKeys$(userId: UserId): Observable<Record<OrganizationId, OrgKey> | null>;
+  abstract makeOrgKey<T extends OrgKey | ProviderKey>(userId: UserId): Promise<[EncString, T]>;
+  
+  // Cipher decryption keys
+  abstract cipherDecryptionKeys$(userId: UserId): Observable<CipherDecryptionKeys | null>;
+  
+  // Key lifecycle
+  abstract initAccount(userId: UserId): Promise<{ userKey: UserKey; publicKey: string; privateKey: EncString; }>;
+  abstract clearKeys(userId: UserId): Promise<void>;
+}
+```
+
+Location: `libs/key-management/src/key.service.ts:73`
+
+#### KdfConfigService
+
+Manages Key Derivation Function configuration:
+
+```typescript
+// From libs/key-management/src/kdf-config.service.ts:27
+export class DefaultKdfConfigService implements KdfConfigService {
+  async setKdfConfig(userId: UserId, kdfConfig: KdfConfig): Promise<void>;
+  async getKdfConfig(userId: UserId): Promise<KdfConfig>;
+  getKdfConfig$(userId: UserId): Observable<KdfConfig | null>;
+}
+```
+
+Location: `libs/key-management/src/kdf-config.service.ts:27`
+
+## Key Derivation
+
+### Master Key Derivation
+
+The master key is derived from the user's password using a KDF:
+
+```typescript
+// From libs/key-management/src/key.service.ts:254
+async makeMasterKey(password: string, email: string, kdfConfig: KdfConfig): Promise<MasterKey> {
+  const start = new Date().getTime();
+  email = email.trim().toLowerCase();
+  
+  const masterKey = await this.keyGenerationService.deriveKeyFromPassword(
+    password,
+    email,
+    kdfConfig,
+  ) as MasterKey;
+  
+  const end = new Date().getTime();
+  this.logService.info(`[KeyService] Deriving master key took ${end - start}ms`);
+  
+  return masterKey;
+}
+```
+
+**Inputs:**
+- Password (user's master password)
+- Email (normalized as salt)
+- KDF configuration (PBKDF2 or Argon2id settings)
+
+**Output:**
+- 256-bit master key
+
+<Warning>
+Master key derivation is intentionally slow (typically 600,000+ PBKDF2 iterations or Argon2id with 64MB memory) to resist brute-force attacks. Do not reduce iteration counts.
+</Warning>
+
+### KDF Configurations
+
+#### PBKDF2-SHA256
+
+```typescript
+// From libs/key-management/src/models/kdf-config.ts:16
+export class PBKDF2KdfConfig {
+  static ITERATIONS = new RangeWithDefault(600_000, 2_000_000, 600_000);
+  static PRELOGIN_ITERATIONS_MIN = 5000;
+  kdfType: KdfType.PBKDF2_SHA256 = KdfType.PBKDF2_SHA256;
+  iterations: number;
+
+  validateKdfConfigForSetting(): void {
+    if (!PBKDF2KdfConfig.ITERATIONS.inRange(this.iterations)) {
+      throw new Error(
+        `PBKDF2 iterations must be between ${PBKDF2KdfConfig.ITERATIONS.min} and ${PBKDF2KdfConfig.ITERATIONS.max}`,
+      );
+    }
+  }
+}
+```
+
+**Parameters:**
+- **Iterations**: 600,000 to 2,000,000 (default: 600,000)
+- **Algorithm**: SHA-256
+- **Salt**: User's email (normalized to lowercase)
+
+#### Argon2id
+
+```typescript
+// From libs/key-management/src/models/kdf-config.ts:66
+export class Argon2KdfConfig {
+  static MEMORY = new RangeWithDefault(16, 1024, 64);      // MiB
+  static PARALLELISM = new RangeWithDefault(1, 16, 4);     // threads
+  static ITERATIONS = new RangeWithDefault(2, 10, 3);      // iterations
+
+  validateKdfConfigForSetting(): void {
+    if (!Argon2KdfConfig.ITERATIONS.inRange(this.iterations)) {
+      throw new Error(
+        `Argon2 iterations must be between ${Argon2KdfConfig.ITERATIONS.min} and ${Argon2KdfConfig.ITERATIONS.max}`,
+      );
+    }
+    // ... memory and parallelism validation
+  }
+}
+```
+
+**Parameters:**
+- **Iterations**: 2 to 10 (default: 3)
+- **Memory**: 16 to 1024 MiB (default: 64 MiB)
+- **Parallelism**: 1 to 16 threads (default: 4)
+
+<Warning>
+Argon2id provides better resistance to GPU/ASIC attacks due to its memory-hard properties. It's recommended over PBKDF2 for new accounts.
+</Warning>
+
+### User Key Generation
+
+The user key is randomly generated, not derived:
+
+```typescript
+// From libs/key-management/src/key.service.ts:187
+async makeUserKey(masterKey: MasterKey): Promise<[UserKey, EncString]> {
+  if (!masterKey) {
+    throw new Error("MasterKey is required");
+  }
+
+  const newUserKey = await this.keyGenerationService.createKey(512);
+  return this.buildProtectedSymmetricKey(masterKey, newUserKey);
+}
+```
+
+**Process:**
+1. Generate 512-bit random key using CSPRNG
+2. Encrypt user key with master key
+3. Return both plaintext user key and encrypted version
+
+Location: `libs/key-management/src/key.service.ts:187`
+
+## Key Storage
+
+### In-Memory Storage
+
+Active keys are stored in memory during user sessions:
+
+```typescript
+// From libs/key-management/src/key.service.ts:104
+async setUserKey(key: UserKey, userId: UserId): Promise<void> {
+  if (key == null) {
+    throw new Error("No key provided. Lock the user to clear the key");
+  }
+  if (userId == null) {
+    throw new Error("No userId provided.");
+  }
+
+  await this.stateProvider.setUserState(USER_KEY, this.userKeyToStateObject(key), userId);
+  await this.stateProvider.setUserState(USER_EVER_HAD_USER_KEY, true, userId);
+  
+  await this.storeAdditionalKeys(key, userId);
+}
+```
+
+**Storage locations:**
+- **Memory**: Active user key (cleared on lock)
+- **State provider**: User-specific encrypted state
+- **Additional keys**: Auto-unlock keys, biometric keys
+
+### Persistent Storage
+
+Encrypted keys can be stored for auto-unlock:
+
+```typescript
+// From libs/key-management/src/key.service.ts:550
+protected async storeAdditionalKeys(key: UserKey, userId: UserId) {
+  const storeAuto = await this.shouldStoreKey(KeySuffixOptions.Auto, userId);
+  if (storeAuto) {
+    await this.stateService.setUserKeyAutoUnlock(key.keyB64, { userId: userId });
+  } else {
+    await this.stateService.setUserKeyAutoUnlock(null, { userId: userId });
+  }
+}
+```
+
+**Auto-unlock storage:**
+- Only stored if vault timeout is "Never"
+- Encrypted with platform-specific protection
+- CLI always stores for auto-unlock
+
+Location: `libs/key-management/src/key.service.ts:550`
+
+<Warning>
+Auto-unlock keys stored on disk reduce security. Only enable for trusted devices with full-disk encryption.
+</Warning>
+
+## Key Lifecycle
+
+### Account Initialization
+
+When creating a new account, all cryptographic keys are initialized:
+
+```typescript
+// From libs/key-management/src/key.service.ts:502
+async initAccount(userId: UserId): Promise<{
+  userKey: UserKey;
+  publicKey: string;
+  privateKey: EncString;
+}> {
+  if (userId == null) {
+    throw new Error("UserId is required.");
+  }
+
+  // Verify user key doesn't exist
+  const existingUserKey = await firstValueFrom(this.userKey$(userId));
+  if (existingUserKey != null) {
+    this.logService.error("Tried to initialize account with existing user key.");
+    throw new Error("Cannot initialize account, keys already exist.");
+  }
+
+  const userKey = await this.keyGenerationService.createKey(512) as UserKey;
+  const [publicKey, privateKey] = await this.makeKeyPair(userKey);
+  
+  if (privateKey.encryptedString == null) {
+    throw new Error("Failed to create valid private key.");
+  }
+
+  await this.setUserKey(userKey, userId);
+  await this.accountCryptographyStateService.setAccountCryptographicState(
+    {
+      V1: {
+        private_key: privateKey.encryptedString,
+      },
+    },
+    userId,
+  );
+
+  return { userKey, publicKey, privateKey };
+}
+```
+
+**Initialization steps:**
+1. Generate 512-bit user key (CSPRNG)
+2. Generate 2048-bit RSA key pair
+3. Encrypt private key with user key
+4. Store user key in memory
+5. Store encrypted private key in state
+
+Location: `libs/key-management/src/key.service.ts:502`
+
+### Key Rotation
+
+User keys can be rotated without losing access to vault data:
+
+```typescript
+// From libs/key-management/src/key.service.ts:126
+async refreshAdditionalKeys(userId: UserId): Promise<void> {
+  if (userId == null) {
+    throw new Error("UserId is required.");
+  }
+
+  const key = await firstValueFrom(this.userKey$(userId));
+  if (key == null) {
+    throw new Error("No user key found for: " + userId);
+  }
+
+  await this.setUserKey(key, userId);
+}
+```
+
+**Refresh process:**
+- Re-encrypts additional keys (auto-unlock, biometric)
+- Maintains same user key
+- Updates storage with new encryption
+
+### Key Clearing
+
+All keys are cleared on logout or lock:
+
+```typescript
+// From libs/key-management/src/key.service.ts:448
+async clearKeys(userId: UserId): Promise<void> {
+  if (userId == null) {
+    throw new Error("UserId is required");
+  }
+
+  await this.masterPasswordService.clearMasterKeyHash(userId);
+  await this.clearUserKey(userId);
+  await this.clearOrgKeys(userId);
+  await this.clearProviderKeys(userId);
+  await this.stateProvider.setUserState(USER_EVER_HAD_USER_KEY, null, userId);
+  await this.accountCryptographyStateService.clearAccountCryptographicState(userId);
+}
+```
+
+**Clearing process:**
+1. Clear master key hash
+2. Clear user key from memory
+3. Clear organization keys
+4. Clear provider keys
+5. Clear all cryptographic state
+
+Location: `libs/key-management/src/key.service.ts:448`
+
+<Warning>
+Always use `clearKeys()` when the user locks or logs out. Never leave keys in memory after the session ends.
+</Warning>
+
+## Organization Key Management
+
+### Creating Organization Keys
+
+```typescript
+// From libs/key-management/src/key.service.ts:395
+async makeOrgKey<T extends OrgKey | ProviderKey>(userId: UserId): Promise<[EncString, T]> {
+  if (userId == null) {
+    throw new Error("UserId is required");
+  }
+
+  const publicKey = await firstValueFrom(this.userPublicKey$(userId));
+  if (publicKey == null) {
+    throw new Error("No public key found for user " + userId);
+  }
+
+  const shareKey = await this.keyGenerationService.createKey(512);
+  const encShareKey = await this.encryptService.encapsulateKeyUnsigned(shareKey, publicKey);
+  return [encShareKey, shareKey as T];
+}
+```
+
+**Process:**
+1. Generate random 512-bit organization key
+2. Encrypt with user's RSA public key (key encapsulation)
+3. Return encrypted and plaintext versions
+
+### Organization Key Distribution
+
+```typescript
+// From libs/key-management/src/key.service.ts:310
+async setOrgKeys(
+  orgs: ProfileOrganizationResponse[],
+  providerOrgs: ProfileProviderOrganizationResponse[],
+  userId: UserId,
+): Promise<void> {
+  await this.stateProvider.getUser(userId, USER_ENCRYPTED_ORGANIZATION_KEYS).update(() => {
+    const encOrgKeyData: { [orgId: string]: EncryptedOrganizationKeyData } = {};
+
+    for (const org of orgs) {
+      encOrgKeyData[org.id] = {
+        type: "organization",
+        key: org.key,
+      };
+    }
+
+    for (const org of providerOrgs) {
+      encOrgKeyData[org.id] = {
+        type: "provider",
+        providerId: org.providerId,
+        key: org.key,
+      };
+    }
+    return encOrgKeyData;
+  });
+}
+```
+
+**Distribution:**
+- Each member gets org key encrypted with their public key
+- Organization admins can add/remove member access
+- Provider organizations use provider keys for indirect access
+
+Location: `libs/key-management/src/key.service.ts:310`
+
+## Asymmetric Key Management
+
+### Key Pair Generation
+
+```typescript
+// From libs/key-management/src/key.service.ts:425
+async makeKeyPair(key: SymmetricCryptoKey): Promise<[string, EncString]> {
+  if (key == null) {
+    throw new Error("'key' is a required parameter and must be non-null.");
+  }
+
+  const keyPair = await this.cryptoFunctionService.rsaGenerateKeyPair(2048);
+  const publicB64 = Utils.fromBufferToB64(keyPair[0]);
+  const privateEnc = await this.encryptService.wrapDecapsulationKey(keyPair[1], key);
+  return [publicB64, privateEnc];
+}
+```
+
+**Process:**
+1. Generate 2048-bit RSA key pair
+2. Base64-encode public key
+3. Encrypt private key with user key
+4. Return public key (plain) and private key (encrypted)
+
+Location: `libs/key-management/src/key.service.ts:425`
+
+### Private Key Storage
+
+Private keys are always stored encrypted:
+
+```typescript
+// From libs/key-management/src/key.service.ts:666
+userPrivateKey$(userId: UserId): Observable<UserPrivateKey | null> {
+  return this.userPrivateKeyHelper$(userId).pipe(map((keys) => keys?.userPrivateKey ?? null));
+}
+
+private userPrivateKeyHelper$(userId: UserId): Observable<{
+  userKey: UserKey;
+  userPrivateKey: UserPrivateKey | null;
+} | null> {
+  const userKey$ = this.userKey$(userId);
+  return userKey$.pipe(
+    switchMap((userKey) => {
+      if (userKey == null) {
+        return of(null);
+      }
+
+      return this.userEncryptedPrivateKey$(userId).pipe(
+        switchMap(async (encryptedPrivateKey) => {
+          return await this.decryptPrivateKey(encryptedPrivateKey, userKey);
+        }),
+        map((userPrivateKey) => ({
+          userKey,
+          userPrivateKey,
+        })),
+      );
+    }),
+  );
+}
+```
+
+**Access pattern:**
+1. Retrieve encrypted private key from state
+2. Decrypt using current user key
+3. Return decrypted private key (or null if locked)
+
+## Key Validation
+
+Keys are validated before use:
+
+```typescript
+// From libs/key-management/src/key.service.ts:462
+async validateUserKey(key: UserKey | MasterKey | null, userId: UserId): Promise<boolean> {
+  if (key == null) {
+    return false;
+  }
+
+  try {
+    const encPrivateKey = await firstValueFrom(this.userEncryptedPrivateKey$(userId));
+    if (encPrivateKey == null) {
+      return false;
+    }
+
+    // Can decrypt private key
+    const privateKey = await this.decryptPrivateKey(encPrivateKey, key);
+    if (privateKey == null) {
+      return false;
+    }
+
+    // Can successfully derive public key
+    const publicKey = await this.derivePublicKey(privateKey);
+    if (publicKey == null) {
+      return false;
+    }
+  } catch (e) {
+    return false;
+  }
+
+  return true;
+}
+```
+
+**Validation checks:**
+1. Key is not null
+2. Can decrypt user's private key
+3. Can derive public key from private key
+
+Location: `libs/key-management/src/key.service.ts:462`
+
+## Security Best Practices
+
+### Key Storage Security
+
+<Warning>
+Never store master keys or unencrypted user keys in persistent storage. These should only exist in memory during active sessions.
+</Warning>
+
+**Storage guidelines:**
+- Master key: Never stored, always derived
+- User key: Stored encrypted with master key
+- Private key: Stored encrypted with user key
+- Organization keys: Stored encrypted with user's public key
+
+### Key Lifecycle Management
+
+1. **Generation**: Use CSPRNG for all key material
+2. **Storage**: Encrypt before persisting
+3. **Usage**: Decrypt only in memory
+4. **Rotation**: Support key updates without data loss
+5. **Destruction**: Clear keys from memory on lock/logout
+
+### KDF Configuration
+
+1. Use Argon2id for new accounts (better security)
+2. Never reduce PBKDF2 iterations below 600,000
+3. Validate KDF parameters before use
+4. Store KDF config securely with user account
+
+## Related Topics
+
+- [Cryptographic Architecture](/guide/cryptography) - Overall crypto design
+- [Encryption Implementation](/guide/encryption) - How data is encrypted
+- [Security Best Practices](/guide/cryptography) - General security guidelines
+
+## References
+
+- `libs/key-management/src/key.service.ts` - Key service implementation
+- `libs/key-management/src/kdf-config.service.ts` - KDF configuration
+- `libs/key-management/src/models/kdf-config.ts` - KDF configuration models
+- `libs/key-management/src/abstractions/key.service.ts` - Key service interface

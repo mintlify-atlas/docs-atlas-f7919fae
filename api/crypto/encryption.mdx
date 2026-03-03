@@ -1,0 +1,572 @@
+---
+title: Encryption Service
+description: High-level encryption and decryption methods for secure data handling
+---
+
+## Overview
+
+The `EncryptService` provides high-level encryption and decryption operations for strings, bytes, and files. It handles data encryption using symmetric keys, key wrapping, and key encapsulation mechanisms.
+
+## Location
+
+```
+libs/common/src/key-management/crypto/abstractions/encrypt.service.ts
+```
+
+## Interface
+
+### String Encryption
+
+#### `encryptString()`
+
+Encrypts a string to an `EncString`.
+
+```typescript
+abstract encryptString(
+  plainValue: string,
+  key: SymmetricCryptoKey
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `plainValue` - The string to encrypt
+- `key` - The symmetric key to encrypt with
+
+**Returns:** `Promise<EncString>` - Encrypted string
+
+<Note>
+For new use-cases, prefer using the DataEnvelope inside the SDK instead. This is both safer and more maintainable.
+</Note>
+
+**Example:**
+```typescript
+const encrypted = await encryptService.encryptString(
+  'sensitive data',
+  userKey
+);
+```
+
+#### `decryptString()`
+
+Decrypts an `EncString` to a plaintext string.
+
+```typescript
+abstract decryptString(
+  encString: EncString,
+  key: SymmetricCryptoKey
+): Promise<string>;
+```
+
+**Parameters:**
+- `encString` - The encrypted string
+- `key` - The symmetric key to decrypt with
+
+**Returns:** `Promise<string>` - Decrypted plaintext string
+
+**Throws:** `Error` if decryption fails
+
+<Warning>
+This throws if decryption fails. If decryption failures are expected, the callsite should log where the failure occurred and handle it with domain-specific logic (e.g., show a UI error).
+</Warning>
+
+**Example:**
+```typescript
+try {
+  const plaintext = await encryptService.decryptString(encString, userKey);
+  console.log(plaintext);
+} catch (error) {
+  console.error('Decryption failed:', error);
+  // Show UI error to user
+}
+```
+
+### Byte Array Encryption
+
+#### `encryptBytes()`
+
+Encrypts a byte array to an `EncString`.
+
+```typescript
+abstract encryptBytes(
+  plainValue: Uint8Array,
+  key: SymmetricCryptoKey
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `plainValue` - The bytes to encrypt
+- `key` - The symmetric key to encrypt with
+
+**Returns:** `Promise<EncString>` - Encrypted bytes as an EncString
+
+<Warning>
+Deprecated. Bytes are not the right abstraction to encrypt in. Use key wrapping or file encryption instead. Contact the Key-Management team if you think you need this.
+</Warning>
+
+#### `decryptBytes()`
+
+Decrypts an `EncString` to a byte array.
+
+```typescript
+abstract decryptBytes(
+  encString: EncString,
+  key: SymmetricCryptoKey
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `encString` - The encrypted string containing bytes
+- `key` - The symmetric key to decrypt with
+
+**Returns:** `Promise<Uint8Array>` - Decrypted bytes
+
+**Throws:** `Error` if decryption fails
+
+<Warning>
+Deprecated. Use key wrapping or file encryption instead.
+</Warning>
+
+### File Encryption
+
+#### `encryptFileData()`
+
+Encrypts file data to an `EncArrayBuffer`.
+
+```typescript
+abstract encryptFileData(
+  plainValue: Uint8Array,
+  key: SymmetricCryptoKey,
+): Promise<EncArrayBuffer>;
+```
+
+**Parameters:**
+- `plainValue` - The file data to encrypt
+- `key` - The symmetric key to encrypt with
+
+**Returns:** `Promise<EncArrayBuffer>` - Encrypted file data
+
+**Example:**
+```typescript
+const fileBytes = await readFile('document.pdf');
+const encryptedFile = await encryptService.encryptFileData(
+  fileBytes,
+  cipherKey
+);
+```
+
+#### `decryptFileData()`
+
+Decrypts an `EncArrayBuffer` to file data.
+
+```typescript
+abstract decryptFileData(
+  encBuffer: EncArrayBuffer,
+  key: SymmetricCryptoKey
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `encBuffer` - The encrypted file buffer
+- `key` - The symmetric key to decrypt with
+
+**Returns:** `Promise<Uint8Array>` - Decrypted file data
+
+**Throws:** `Error` if decryption fails
+
+**Example:**
+```typescript
+const decryptedBytes = await encryptService.decryptFileData(
+  encArrayBuffer,
+  cipherKey
+);
+await writeFile('document.pdf', decryptedBytes);
+```
+
+### Key Wrapping
+
+Key wrapping is used to securely encrypt cryptographic keys with other keys. See [Key Wrap on Wikipedia](https://en.wikipedia.org/wiki/Key_wrap).
+
+#### `wrapDecapsulationKey()`
+
+Wraps a private key (decapsulation key) with a symmetric key.
+
+```typescript
+abstract wrapDecapsulationKey(
+  decapsulationKeyPcks8: Uint8Array,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `decapsulationKeyPcks8` - The private key in PKCS8 format
+- `wrappingKey` - The symmetric key to wrap with
+
+**Returns:** `Promise<EncString>` - Wrapped private key
+
+#### `unwrapDecapsulationKey()`
+
+Unwraps a private key (decapsulation key) with a symmetric key.
+
+```typescript
+abstract unwrapDecapsulationKey(
+  wrappedDecapsulationKey: EncString,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `wrappedDecapsulationKey` - The wrapped private key
+- `wrappingKey` - The symmetric key to unwrap with
+
+**Returns:** `Promise<Uint8Array>` - Unwrapped private key as bytes
+
+**Throws:** `Error` if unwrapping fails
+
+#### `wrapEncapsulationKey()`
+
+Wraps a public key (encapsulation key) with a symmetric key.
+
+```typescript
+abstract wrapEncapsulationKey(
+  encapsulationKeySpki: Uint8Array,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `encapsulationKeySpki` - The public key in SPKI format
+- `wrappingKey` - The symmetric key to wrap with
+
+**Returns:** `Promise<EncString>` - Wrapped public key
+
+#### `unwrapEncapsulationKey()`
+
+Unwraps a public key (encapsulation key) with a symmetric key.
+
+```typescript
+abstract unwrapEncapsulationKey(
+  wrappedEncapsulationKey: EncString,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `wrappedEncapsulationKey` - The wrapped public key
+- `wrappingKey` - The symmetric key to unwrap with
+
+**Returns:** `Promise<Uint8Array>` - Unwrapped public key as bytes
+
+**Throws:** `Error` if unwrapping fails
+
+#### `wrapSymmetricKey()`
+
+Wraps a symmetric key with another symmetric key.
+
+```typescript
+abstract wrapSymmetricKey(
+  keyToBeWrapped: SymmetricCryptoKey,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `keyToBeWrapped` - The symmetric key to wrap
+- `wrappingKey` - The symmetric key to wrap with
+
+**Returns:** `Promise<EncString>` - Wrapped symmetric key
+
+**Example:**
+```typescript
+const wrappedKey = await encryptService.wrapSymmetricKey(
+  cipherKey,
+  userKey
+);
+```
+
+#### `unwrapSymmetricKey()`
+
+Unwraps a symmetric key with another symmetric key.
+
+```typescript
+abstract unwrapSymmetricKey(
+  keyToBeUnwrapped: EncString,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<SymmetricCryptoKey>;
+```
+
+**Parameters:**
+- `keyToBeUnwrapped` - The wrapped symmetric key
+- `wrappingKey` - The symmetric key to unwrap with
+
+**Returns:** `Promise<SymmetricCryptoKey>` - Unwrapped symmetric key
+
+**Throws:** `Error` if unwrapping fails
+
+**Example:**
+```typescript
+const cipherKey = await encryptService.unwrapSymmetricKey(
+  wrappedKey,
+  userKey
+);
+```
+
+### Key Encapsulation
+
+Key encapsulation mechanisms (KEM) are used to securely share symmetric keys using asymmetric cryptography. See [Key Encapsulation on Wikipedia](https://en.wikipedia.org/wiki/Key_encapsulation_mechanism).
+
+<Note>
+These methods do not establish sender authenticity.
+</Note>
+
+#### `encapsulateKeyUnsigned()`
+
+Encapsulates a symmetric key with an asymmetric public key.
+
+```typescript
+abstract encapsulateKeyUnsigned(
+  sharedKey: SymmetricCryptoKey,
+  encapsulationKey: Uint8Array,
+): Promise<EncString>;
+```
+
+**Parameters:**
+- `sharedKey` - The symmetric key to share
+- `encapsulationKey` - The recipient's public key
+
+**Returns:** `Promise<EncString>` - Encapsulated key
+
+<Warning>
+You probably do not want to use this. Contact the Key-Management team if you think you need to.
+</Warning>
+
+#### `decapsulateKeyUnsigned()`
+
+Decapsulates a shared symmetric key with an asymmetric private key.
+
+```typescript
+abstract decapsulateKeyUnsigned(
+  encryptedSharedKey: EncString,
+  decapsulationKey: Uint8Array,
+): Promise<SymmetricCryptoKey>;
+```
+
+**Parameters:**
+- `encryptedSharedKey` - The encapsulated shared key
+- `decapsulationKey` - The private key to decapsulate with
+
+**Returns:** `Promise<SymmetricCryptoKey>` - Decapsulated symmetric key
+
+**Throws:** `Error` if decapsulation fails
+
+### Hashing
+
+#### `hash()`
+
+Generates a base64-encoded hash of a value.
+
+```typescript
+abstract hash(
+  value: string | Uint8Array,
+  algorithm: "sha1" | "sha256" | "sha512",
+): Promise<string>;
+```
+
+**Parameters:**
+- `value` - The value to hash
+- `algorithm` - The hashing algorithm to use
+
+**Returns:** `Promise<string>` - Base64-encoded hash
+
+**Example:**
+```typescript
+const hash = await encryptService.hash('password', 'sha256');
+```
+
+## Encryption Types
+
+The service supports multiple encryption types defined in `EncryptionType`:
+
+### Symmetric Encryption Types
+
+```typescript
+enum EncryptionType {
+  // AES-256 in CBC mode with Base64 encoding (no MAC)
+  AesCbc256_B64 = 0,
+  
+  // AES-256 in CBC mode with HMAC-SHA256 authentication
+  AesCbc256_HmacSha256_B64 = 2,
+  
+  // XChaCha20Poly1305 encoded in COSE format
+  CoseEncrypt0 = 7,
+}
+```
+
+### Asymmetric Encryption Types
+
+```typescript
+enum EncryptionType {
+  // RSA-2048 with OAEP-SHA256 padding
+  Rsa2048_OaepSha256_B64 = 3,
+  
+  // RSA-2048 with OAEP-SHA1 padding (legacy)
+  Rsa2048_OaepSha1_B64 = 4,
+  
+  // RSA-2048 with OAEP-SHA256 and HMAC-SHA256
+  Rsa2048_OaepSha256_HmacSha256_B64 = 5,
+  
+  // RSA-2048 with OAEP-SHA1 and HMAC-SHA256 (legacy)
+  Rsa2048_OaepSha1_HmacSha256_B64 = 6,
+}
+```
+
+## Data Types
+
+### `EncString`
+
+Represents an encrypted string with metadata about the encryption type.
+
+**Location:** `libs/common/src/key-management/crypto/models/enc-string.ts`
+
+**Structure:**
+```typescript
+class EncString {
+  encryptedString?: SdkEncString;
+  encryptionType?: EncryptionType;
+  data?: string;    // Base64 encrypted data
+  iv?: string;      // Base64 initialization vector
+  mac?: string;     // Base64 MAC (if applicable)
+}
+```
+
+**Format:** `<encryptionType>.<iv>|<data>|<mac>`
+
+**Examples:**
+- `0.iv|data` - AES-256-CBC without MAC
+- `2.iv|data|mac` - AES-256-CBC with HMAC-SHA256
+- `3.data` - RSA-2048-OAEP-SHA256
+
+### `EncArrayBuffer`
+
+Represents encrypted binary data (used for file encryption).
+
+**Location:** `libs/common/src/platform/models/domain/enc-array-buffer.ts`
+
+**Structure:**
+```typescript
+class EncArrayBuffer {
+  readonly encryptionType: EncryptionType;
+  readonly dataBytes: Uint8Array;
+  readonly ivBytes: Uint8Array;
+  readonly macBytes: Uint8Array;
+  readonly buffer: Uint8Array;
+}
+```
+
+### `SymmetricCryptoKey`
+
+Represents a symmetric encryption key.
+
+**Location:** `libs/common/src/platform/models/domain/symmetric-crypto-key.ts`
+
+**Key Types:**
+```typescript
+type Aes256CbcKey = {
+  type: EncryptionType.AesCbc256_B64;
+  encryptionKey: Uint8Array;  // 32 bytes
+};
+
+type Aes256CbcHmacKey = {
+  type: EncryptionType.AesCbc256_HmacSha256_B64;
+  encryptionKey: Uint8Array;      // 32 bytes
+  authenticationKey: Uint8Array;  // 32 bytes
+};
+```
+
+**Key Sizes:**
+- 32 bytes (256 bits) - AES-256 only
+- 64 bytes (512 bits) - AES-256 + HMAC-SHA256
+
+## Usage Examples
+
+### Encrypting User Data
+
+```typescript
+import { EncryptService } from '@bitwarden/common/key-management/crypto/abstractions/encrypt.service';
+import { KeyService } from '@bitwarden/key-management/abstractions/key.service';
+
+// Get user's encryption key
+const userKey = await keyService.getUserKey();
+
+// Encrypt sensitive data
+const encryptedData = await encryptService.encryptString(
+  'My secret note',
+  userKey
+);
+
+// Store encrypted data...
+
+// Later, decrypt the data
+const decryptedData = await encryptService.decryptString(
+  encryptedData,
+  userKey
+);
+```
+
+### Encrypting Files
+
+```typescript
+// Read file
+const fileData = await readFileAsUint8Array('document.pdf');
+
+// Encrypt file
+const encryptedFile = await encryptService.encryptFileData(
+  fileData,
+  cipherKey
+);
+
+// Upload encrypted file...
+
+// Later, decrypt file
+const decryptedFile = await encryptService.decryptFileData(
+  encryptedFile,
+  cipherKey
+);
+```
+
+### Key Wrapping for Sharing
+
+```typescript
+// Create a new cipher key
+const cipherKey = await keyService.makeCipherKey();
+
+// Wrap the cipher key with user's key
+const wrappedKey = await encryptService.wrapSymmetricKey(
+  cipherKey,
+  userKey
+);
+
+// Share wrappedKey with user...
+
+// Recipient unwraps the key
+const unwrappedKey = await encryptService.unwrapSymmetricKey(
+  wrappedKey,
+  userKey
+);
+```
+
+## Related Services
+
+- [CryptoFunctionService](/api/crypto/crypto-service) - Low-level crypto primitives
+- [KeyService](/api/crypto/key-generation) - Key management and generation
+
+## Security Considerations
+
+1. **Error Handling**: Decryption methods throw on failure. Always handle these errors appropriately in your application.
+
+2. **Key Management**: Never log or expose encryption keys. Always use secure key storage.
+
+3. **Authenticated Encryption**: Prefer `AesCbc256_HmacSha256_B64` over `AesCbc256_B64` for integrity protection.
+
+4. **Deprecation**: Some methods are deprecated. Check warnings before using in new code.
+
+5. **SDK Preference**: For new features, use the SDK's DataEnvelope instead of direct encryption.

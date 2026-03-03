@@ -1,0 +1,728 @@
+---
+title: Key Service
+description: Key generation, management, and derivation service for user and organization keys
+---
+
+## Overview
+
+The `KeyService` manages all cryptographic keys in Bitwarden, including user keys, organization keys, provider keys, and key pairs. It handles key generation, derivation, storage, and rotation.
+
+## Location
+
+```
+libs/key-management/src/abstractions/key.service.ts
+```
+
+## Interface
+
+### User Key Management
+
+#### `userKey$()`
+
+Returns an observable stream of the user's encryption key.
+
+```typescript
+abstract userKey$(userId: UserId): Observable<UserKey | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<UserKey | null>` - Stream of user keys (null if user is locked/logged out)
+
+**Example:**
+```typescript
+const userKey$ = keyService.userKey$(userId);
+userKey$.subscribe(key => {
+  if (key) {
+    // User is unlocked
+  } else {
+    // User is locked or logged out
+  }
+});
+```
+
+#### `getUserKey()`
+
+Retrieves the user's encryption key.
+
+```typescript
+abstract getUserKey(userId?: string): Promise<UserKey | null>;
+```
+
+**Parameters:**
+- `userId` - Optional user ID
+
+**Returns:** `Promise<UserKey | null>` - The user key or null
+
+<Warning>
+Deprecated. Use `userKey$()` with a required `UserId` instead.
+</Warning>
+
+#### `setUserKey()`
+
+Sets the user key and stores any additional versions (auto, biometrics, pin).
+
+```typescript
+abstract setUserKey(key: UserKey, userId: UserId): Promise<void>;
+```
+
+**Parameters:**
+- `key` - The user key to set
+- `userId` - The user ID
+
+**Throws:** `Error` when key or userId is null. Lock the account to clear a key.
+
+#### `hasUserKey()`
+
+Checks if a user key is available in memory.
+
+```typescript
+abstract hasUserKey(userId: UserId): Promise<boolean>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Promise<boolean>` - True if user key is available
+
+#### `clearStoredUserKey()`
+
+Clears the stored user key from storage.
+
+```typescript
+abstract clearStoredUserKey(userId: string): Promise<void>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Throws:** `Error` when userId is null or undefined
+
+### Key Generation
+
+#### `makeUserKey()`
+
+Generates a new user key and encrypts it with the master key.
+
+```typescript
+abstract makeUserKey(masterKey: MasterKey): Promise<[UserKey, EncString]>;
+```
+
+**Parameters:**
+- `masterKey` - The user's master key
+
+**Returns:** `Promise<[UserKey, EncString]>` - Tuple of new user key and encrypted version
+
+**Throws:** `Error` when master key is null or undefined
+
+<Warning>
+Deprecated. Interacting with the master key directly is prohibited. For new features, use SDK methods for user cryptography initialization or contact the KM team.
+</Warning>
+
+#### `makeMasterKey()`
+
+Derives a master key from password using KDF.
+
+```typescript
+abstract makeMasterKey(
+  password: string,
+  email: string,
+  kdfConfig: KdfConfig
+): Promise<MasterKey>;
+```
+
+**Parameters:**
+- `password` - The user's master password
+- `email` - The user's email address
+- `kdfConfig` - Key derivation function configuration
+
+**Returns:** `Promise<MasterKey>` - Derived master key
+
+<Warning>
+Deprecated. Interacting with the master key directly is prohibited.
+</Warning>
+
+#### `makeCipherKey()`
+
+Generates a new cipher encryption key.
+
+```typescript
+abstract makeCipherKey(): Promise<CipherKey>;
+```
+
+**Returns:** `Promise<CipherKey>` - A new cipher key
+
+**Example:**
+```typescript
+const cipherKey = await keyService.makeCipherKey();
+```
+
+#### `makeDataEncKey()`
+
+Generates a new data encryption key and wraps it with the provided key.
+
+```typescript
+abstract makeDataEncKey<T extends UserKey | OrgKey>(
+  key: T,
+): Promise<[SymmetricCryptoKey, EncString]>;
+```
+
+**Parameters:**
+- `key` - User key or organization key to wrap with
+
+**Returns:** `Promise<[SymmetricCryptoKey, EncString]>` - New key and wrapped version
+
+<Warning>
+Deprecated. Do not use this for new code / new cryptographic designs.
+</Warning>
+
+#### `makeSendKey()`
+
+Creates a Send encryption key from key material.
+
+```typescript
+abstract makeSendKey(keyMaterial: Uint8Array): Promise<SymmetricCryptoKey>;
+```
+
+**Parameters:**
+- `keyMaterial` - Key material to derive from
+
+**Returns:** `Promise<SymmetricCryptoKey>` - Send key
+
+### Asymmetric Key Operations
+
+#### `makeKeyPair()`
+
+Generates a new RSA key pair.
+
+```typescript
+abstract makeKeyPair(key: SymmetricCryptoKey): Promise<[string, EncString]>;
+```
+
+**Parameters:**
+- `key` - Symmetric key to wrap the private key with
+
+**Returns:** `Promise<[string, EncString]>` - Tuple of `[publicKey, wrappedPrivateKey]`
+
+**Throws:** `Error` if the provided key is null
+
+<Warning>
+Deprecated. New use-cases should be done in the SDK. Contact the Key Management team.
+</Warning>
+
+#### `makeOrgKey()`
+
+Creates a new organization key encrypted with the user's public key.
+
+```typescript
+abstract makeOrgKey<T extends OrgKey | ProviderKey>(
+  userId: UserId
+): Promise<[EncString, T]>;
+```
+
+**Parameters:**
+- `userId` - User ID for public key lookup
+
+**Returns:** `Promise<[EncString, T]>` - Encrypted org/provider key and decrypted key
+
+**Throws:** 
+- `Error` when userId is null or undefined
+- `Error` when no public key is found for the user
+
+#### `userPrivateKey$()`
+
+Returns an observable of the user's decrypted private key.
+
+```typescript
+abstract userPrivateKey$(userId: UserId): Observable<UserPrivateKey | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<UserPrivateKey | null>` - Stream of private keys
+
+#### `userPublicKey$()`
+
+Returns an observable of the user's public key.
+
+```typescript
+abstract userPublicKey$(userId: UserId): Observable<Uint8Array | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<Uint8Array | null>` - Stream of public keys
+
+#### `userEncryptionKeyPair$()`
+
+Returns an observable of the user's key pair (guaranteed to be consistent).
+
+```typescript
+abstract userEncryptionKeyPair$(
+  userId: UserId,
+): Observable<{ privateKey: UserPrivateKey; publicKey: UserPublicKey } | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<{privateKey, publicKey} | null>` - Key pair or null
+
+#### `getFingerprint()`
+
+Generates a fingerprint phrase for a public key.
+
+```typescript
+abstract getFingerprint(
+  fingerprintMaterial: string,
+  publicKey: Uint8Array
+): Promise<string[]>;
+```
+
+**Parameters:**
+- `fingerprintMaterial` - Material to include in fingerprint
+- `publicKey` - The public key
+
+**Returns:** `Promise<string[]>` - Array of fingerprint words
+
+**Throws:** `Error` when publicKey is null or undefined
+
+### Master Key Operations
+
+#### `getOrDeriveMasterKey()`
+
+Retrieves or derives the master key from a password.
+
+```typescript
+abstract getOrDeriveMasterKey(
+  password: string,
+  userId: UserId
+): Promise<MasterKey>;
+```
+
+**Parameters:**
+- `password` - The master password
+- `userId` - The user ID
+
+**Returns:** `Promise<MasterKey>` - The master key
+
+**Throws:**
+- `Error` when userId is null/undefined
+- `Error` when email or KDF config cannot be found
+
+<Warning>
+Deprecated. Use a high-level function from MasterPasswordService instead.
+</Warning>
+
+#### `encryptUserKeyWithMasterKey()`
+
+Encrypts the user key with the master key.
+
+```typescript
+abstract encryptUserKeyWithMasterKey(
+  masterKey: MasterKey,
+  userKey: UserKey,
+): Promise<[UserKey, EncString]>;
+```
+
+**Parameters:**
+- `masterKey` - The master key
+- `userKey` - The user key to encrypt
+
+**Returns:** `Promise<[UserKey, EncString]>` - User key and encrypted version
+
+**Throws:** `Error` when userKey or masterKey is null/undefined
+
+<Warning>
+Deprecated. Use a high-level function from MasterPasswordService instead.
+</Warning>
+
+#### `hashMasterKey()`
+
+Creates a master password hash for authentication.
+
+```typescript
+abstract hashMasterKey(
+  password: string,
+  key: MasterKey,
+  hashPurpose?: HashPurpose,
+): Promise<string>;
+```
+
+**Parameters:**
+- `password` - The master password
+- `key` - The master key
+- `hashPurpose` - Hash purpose (defaults to `HashPurpose.ServerAuthorization`)
+
+**Returns:** `Promise<string>` - Password hash
+
+**Hash Purposes:**
+```typescript
+enum HashPurpose {
+  ServerAuthorization = 1,  // For server authentication
+  LocalAuthorization = 2,   // For local authentication
+}
+```
+
+<Warning>
+Deprecated. Use a high-level function from MasterPasswordService instead.
+</Warning>
+
+### Organization Key Management
+
+#### `setOrgKeys()`
+
+Stores encrypted organization keys.
+
+```typescript
+abstract setOrgKeys(
+  orgs: ProfileOrganizationResponse[],
+  providerOrgs: ProfileProviderOrganizationResponse[],
+  userId: UserId,
+): Promise<void>;
+```
+
+**Parameters:**
+- `orgs` - Organization data
+- `providerOrgs` - Provider organization data
+- `userId` - The user ID
+
+#### `getOrgKey()`
+
+Retrieves an organization's symmetric key.
+
+```typescript
+abstract getOrgKey(orgId: string): Promise<OrgKey | null>;
+```
+
+**Parameters:**
+- `orgId` - The organization ID
+
+**Returns:** `Promise<OrgKey | null>` - The organization key
+
+**Throws:** `Error` when not active user
+
+<Warning>
+Deprecated. Use the observable `userOrgKeys$` and map to the desired OrgKey instead.
+</Warning>
+
+#### `orgKeys$()`
+
+Returns an observable of all organization keys for a user.
+
+```typescript
+abstract orgKeys$(
+  userId: UserId
+): Observable<Record<OrganizationId, OrgKey> | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<Record<OrganizationId, OrgKey> | null>` - Map of org IDs to keys
+
+**Throws:** `Error` if an invalid user ID is passed
+
+### Provider Key Management
+
+#### `setProviderKeys()`
+
+Stores provider keys for a user.
+
+```typescript
+abstract setProviderKeys(
+  providers: ProfileProviderResponse[],
+  userId: UserId
+): Promise<void>;
+```
+
+**Parameters:**
+- `providers` - Provider organization data
+- `userId` - The user ID
+
+#### `providerKeys$()`
+
+Returns an observable of provider keys.
+
+```typescript
+abstract providerKeys$(
+  userId: UserId
+): Observable<Record<ProviderId, ProviderKey> | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Observable<Record<ProviderId, ProviderKey> | null>` - Map of provider IDs to keys
+
+**Throws:** `Error` if an invalid user ID is passed
+
+### Cipher Decryption Keys
+
+#### `cipherDecryptionKeys$()`
+
+Returns all keys needed for decrypting ciphers.
+
+```typescript
+abstract cipherDecryptionKeys$(
+  userId: UserId,
+  legacySupport?: boolean,
+): Observable<CipherDecryptionKeys | null>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+- `legacySupport` - Support legacy key format (default: `false`)
+
+**Returns:** `Observable<CipherDecryptionKeys | null>` - Decryption keys
+
+**Types:**
+```typescript
+type CipherDecryptionKeys = {
+  userKey: UserKey;
+  orgKeys: Record<OrganizationId, OrgKey> | null;
+};
+```
+
+**Throws:** `Error` if an invalid user ID is passed
+
+### Account Initialization
+
+#### `initAccount()`
+
+Initializes all necessary crypto keys for a new account.
+
+```typescript
+abstract initAccount(userId: UserId): Promise<{
+  userKey: UserKey;
+  publicKey: string;
+  privateKey: EncString;
+}>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Promise<{userKey, publicKey, privateKey}>` - Newly created keys
+
+**Throws:**
+- `Error` if userId is null or undefined
+- `Error` if user already has a user key
+
+<Warning>
+Deprecated. New cryptography initialization should be done in the SDK. See PM-21771.
+</Warning>
+
+### Key Validation
+
+#### `validateUserKey()`
+
+Validates that a user key is correct for a given user.
+
+```typescript
+abstract validateUserKey(key: UserKey, userId: UserId): Promise<boolean>;
+```
+
+**Parameters:**
+- `key` - The key to validate
+- `userId` - The user ID
+
+**Returns:** `Promise<boolean>` - True if key is valid
+
+### Cleanup
+
+#### `clearKeys()`
+
+Clears all of the user's keys from storage.
+
+```typescript
+abstract clearKeys(userId: UserId): Promise<void>;
+```
+
+**Parameters:**
+- `userId` - The user ID
+
+**Throws:** `Error` when userId is null or undefined
+
+## Key Types
+
+All key types are branded types built on top of `SymmetricCryptoKey` or `Uint8Array`:
+
+```typescript
+// Symmetric keys
+type UserKey = Opaque<SymmetricCryptoKey, "UserKey">;
+type MasterKey = Opaque<SymmetricCryptoKey, "MasterKey">;
+type OrgKey = Opaque<SymmetricCryptoKey, "OrgKey">;
+type ProviderKey = Opaque<SymmetricCryptoKey, "ProviderKey">;
+type CipherKey = Opaque<SymmetricCryptoKey, "CipherKey">;
+type DeviceKey = Opaque<SymmetricCryptoKey, "DeviceKey">;
+type PrfKey = Opaque<SymmetricCryptoKey, "PrfKey">;
+
+// Asymmetric keys
+type UserPrivateKey = Opaque<Uint8Array, "UserPrivateKey">;
+type UserPublicKey = Opaque<UnsignedPublicKey, "UserPublicKey">;
+```
+
+**Location:** `libs/common/src/types/key.ts`
+
+## KDF Configuration
+
+Key Derivation Function (KDF) configurations control how master keys are derived from passwords.
+
+### `KdfConfig`
+
+Union type for KDF configurations:
+
+```typescript
+type KdfConfig = PBKDF2KdfConfig | Argon2KdfConfig;
+```
+
+### `PBKDF2KdfConfig`
+
+PBKDF2-SHA256 configuration:
+
+```typescript
+class PBKDF2KdfConfig {
+  kdfType: KdfType.PBKDF2_SHA256;
+  iterations: number;  // 600,000 - 2,000,000 (default: 600,000)
+}
+```
+
+**Example:**
+```typescript
+const kdfConfig = new PBKDF2KdfConfig(600_000);
+```
+
+### `Argon2KdfConfig`
+
+Argon2id configuration:
+
+```typescript
+class Argon2KdfConfig {
+  kdfType: KdfType.Argon2id;
+  iterations: number;   // 2-10 (default: 3)
+  memory: number;       // 16-1024 MB (default: 64)
+  parallelism: number;  // 1-16 (default: 4)
+}
+```
+
+**Example:**
+```typescript
+const kdfConfig = new Argon2KdfConfig(3, 64, 4);
+```
+
+### `KdfType`
+
+```typescript
+enum KdfType {
+  PBKDF2_SHA256 = 0,
+  Argon2id = 1,
+}
+```
+
+**Location:** `libs/key-management/src/models/kdf-config.ts`
+
+## Usage Examples
+
+### Generating and Setting User Key
+
+```typescript
+import { KeyService } from '@bitwarden/key-management/abstractions/key.service';
+
+// Generate new user key with master key
+const [userKey, encryptedUserKey] = await keyService.makeUserKey(masterKey);
+
+// Set the user key
+await keyService.setUserKey(userKey, userId);
+```
+
+### Accessing User Keys
+
+```typescript
+// Using observable (recommended)
+keyService.userKey$(userId).subscribe(async userKey => {
+  if (userKey) {
+    // User is unlocked, can decrypt data
+    const data = await encryptService.decryptString(encrypted, userKey);
+  }
+});
+
+// Using promise (legacy)
+const userKey = await keyService.getUserKey(userId);
+```
+
+### Deriving Master Key
+
+```typescript
+import { PBKDF2KdfConfig } from '@bitwarden/key-management/models/kdf-config';
+
+const kdfConfig = new PBKDF2KdfConfig(600_000);
+const masterKey = await keyService.makeMasterKey(
+  'user-password',
+  'user@example.com',
+  kdfConfig
+);
+```
+
+### Creating Organization Key
+
+```typescript
+// Generate new org key
+const [encryptedOrgKey, orgKey] = await keyService.makeOrgKey(userId);
+
+// The orgKey can be used for encryption
+// The encryptedOrgKey is stored/shared with members
+```
+
+### Getting Cipher Decryption Keys
+
+```typescript
+const keys$ = keyService.cipherDecryptionKeys$(userId);
+keys$.subscribe(keys => {
+  if (keys) {
+    const { userKey, orgKeys } = keys;
+    // Decrypt personal ciphers with userKey
+    // Decrypt org ciphers with orgKeys[orgId]
+  }
+});
+```
+
+### Generating Fingerprint
+
+```typescript
+const publicKey = await keyService.userPublicKey$(userId).toPromise();
+const fingerprint = await keyService.getFingerprint(
+  'user@example.com',
+  publicKey
+);
+console.log('Fingerprint:', fingerprint.join('-'));
+// Example output: "alligator-transfer-laziness-macaroni-blue"
+```
+
+## Related Services
+
+- [EncryptService](/api/crypto/encryption) - Encryption/decryption operations
+- [CryptoFunctionService](/api/crypto/crypto-service) - Low-level crypto primitives
+
+## Security Considerations
+
+1. **Master Key Deprecation**: Direct interaction with master keys is deprecated. Use `MasterPasswordService` for high-level operations.
+
+2. **Key Storage**: User keys should be cleared from memory when the user locks their vault.
+
+3. **KDF Configuration**: Use appropriate KDF parameters:
+   - PBKDF2: Minimum 600,000 iterations
+   - Argon2id: Minimum 2 iterations, 16 MB memory, 1 parallelism
+
+4. **Key Validation**: Always validate keys before use with `validateUserKey()`.
+
+5. **Observable Cleanup**: Subscribe to key observables carefully to avoid memory leaks.
+
+6. **SDK Migration**: New cryptographic features should use SDK methods instead of these low-level functions.
+
+7. **Error Handling**: Many methods throw errors. Always wrap in try-catch blocks.
+
+8. **User Context**: Most operations require a `UserId`. Never use keys from one user for another user's data.

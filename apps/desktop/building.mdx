@@ -1,0 +1,361 @@
+---
+title: Building the Desktop App
+description: Build commands and platform-specific instructions for the Bitwarden Desktop application
+---
+
+This guide covers how to build the Bitwarden Desktop application for different platforms.
+
+## Prerequisites
+
+- Node.js (version specified in `.nvmrc`)
+- Rust toolchain (for native modules)
+- Platform-specific tools:
+  - **Windows**: Visual Studio Build Tools
+  - **macOS**: Xcode Command Line Tools
+  - **Linux**: Build essentials, depending on your distribution
+
+## Build Commands
+
+### Development Build
+
+Build all components (main, renderer, and preload) in development mode:
+
+```bash
+npm run build:dev
+```
+
+This runs three builds concurrently:
+- Main process: `npm run build:main:dev`
+- Renderer process: `npm run build:renderer:dev`
+- Preload script: `npm run build:preload:dev`
+
+### Production Build
+
+Build all components in production mode:
+
+```bash
+npm run build
+```
+
+This is equivalent to:
+
+```bash
+concurrently \
+  "npm run build:main" \
+  "npm run build:renderer" \
+  "npm run build:preload"
+```
+
+### Individual Component Builds
+
+#### Main Process
+
+```bash
+# Production
+npm run build:main
+
+# Development
+npm run build:main:dev
+
+# Development with watch mode
+npm run build:main:watch
+```
+
+#### Renderer Process (Angular)
+
+```bash
+# Production
+npm run build:renderer
+
+# Development
+npm run build:renderer:dev
+
+# Development with watch mode
+npm run build:renderer:watch
+```
+
+#### Preload Script
+
+```bash
+# Production
+npm run build:preload
+
+# Development
+npm run build:preload:dev
+
+# Development with watch mode
+npm run build:preload:watch
+```
+
+### Native Module Build
+
+Build the Rust native modules:
+
+```bash
+# Cross-platform build
+npm run build-native
+
+# macOS with autofill provider
+npm run build-native-macos
+```
+
+The native modules are located in `desktop_native/` and built using N-API.
+
+## Platform-Specific Builds
+
+### Windows
+
+#### Standard Build
+
+Build for all Windows architectures (x64, ARM64, ia32):
+
+```bash
+npm run dist:win
+```
+
+This combines:
+1. `npm run build` - Build all TypeScript/Angular code
+2. `npm run pack:win` - Package with electron-builder
+
+Or for CI environments:
+
+```bash
+npm run dist:win:ci
+```
+
+#### Beta Channel
+
+```bash
+npm run pack:win:beta
+```
+
+Uses `electron-builder.beta.json` configuration.
+
+<Note>
+Windows builds create multiple installer formats: NSIS installer, portable executable, and Microsoft Store package.
+</Note>
+
+### macOS
+
+#### Standard Build (Universal Binary)
+
+Build for both Intel and Apple Silicon:
+
+```bash
+npm run dist:mac
+```
+
+This creates a universal binary that runs natively on both architectures.
+
+#### With macOS Autofill Extension
+
+```bash
+npm run pack:mac:with-extension
+```
+
+This:
+1. Builds the autofill provider: `./desktop_native/autofill_provider/build.sh`
+2. Creates the macOS extension: `npm run build:macos-extension:mac`
+3. Packages the app: `electron-builder --mac --universal`
+
+#### Mac App Store (MAS)
+
+```bash
+# Production MAS build
+npm run dist:mac:mas
+
+# Development MAS build
+npm run dist:mac:masdev
+
+# Local MAS build (no provisioning profiles)
+npm run pack:local:mac
+```
+
+<Warning>
+Mac App Store builds require:
+- Valid Apple Developer account
+- Provisioning profiles
+- Proper entitlements configuration
+- Code signing certificates
+
+The MAS build process differs from standard macOS builds due to sandboxing requirements.
+</Warning>
+
+#### Publishing to Mac App Store
+
+```bash
+npm run publish:mac:mas
+```
+
+This builds the app and uploads it using `xcrun altool`:
+
+```bash
+xcrun altool --upload-app --type osx \
+  --file "$(find ./dist/mas-universal/Bitwarden*.pkg)" \
+  --apiKey $APP_STORE_CONNECT_AUTH_KEY \
+  --apiIssuer $APP_STORE_CONNECT_TEAM_ISSUER
+```
+
+### Linux
+
+#### Standard Build (x64)
+
+```bash
+npm run dist:lin
+```
+
+This creates:
+- Snap package (with polkit policy)
+- AppImage
+- tar.gz archive
+- Unpacked directory with resources
+
+#### ARM64 Build
+
+```bash
+npm run dist:lin:arm64
+```
+
+#### Flatpak
+
+Development flatpak:
+
+```bash
+npm run flatpak:dev
+```
+
+Production flatpak:
+
+```bash
+npm run pack:lin:flatpak
+```
+
+<Note>
+The Linux build process includes special handling for:
+- Snap packages: Adds polkit policy to `meta/polkit/`
+- Flatpak: Uses manifest from `resources/com.bitwarden.desktop.devel.yaml`
+- Desktop files and icons for proper integration
+</Note>
+
+## Running the App
+
+### Development Mode
+
+```bash
+# Start with dev environment
+npm run electron
+
+# Start with certificate error ignoring (for testing)
+npm run electron:ignore
+```
+
+### Production Mode
+
+```bash
+npm run start
+```
+
+This sets:
+- `ELECTRON_IS_DEV=0`
+- `ELECTRON_NO_UPDATER=1`
+- Runs from `./build` directory
+
+## Publishing
+
+Publish builds to distribution servers:
+
+```bash
+# Linux
+npm run publish:lin
+
+# macOS
+npm run publish:mac
+
+# Windows
+npm run publish:win
+
+# Windows (dev build)
+npm run publish:win:dev
+```
+
+<Warning>
+Publishing commands use `electron-builder` with `-p always` flag, which uploads to configured publish targets. Ensure proper credentials are configured before running these commands.
+</Warning>
+
+## Build Configuration
+
+### Webpack Configuration
+
+The app uses webpack with three separate configurations:
+
+```typescript
+// Main process
+NODE_ENV=production webpack --config webpack.config.js --config-name main
+
+// Renderer process
+NODE_ENV=production webpack --config webpack.config.js --config-name renderer
+
+// Preload script
+NODE_ENV=production webpack --config webpack.config.js --config-name preload
+```
+
+### Environment Variables
+
+- `NODE_ENV`: `production` or `development`
+- `ELECTRON_IS_DEV`: `0` or `1`
+- `ELECTRON_NO_UPDATER`: Disable auto-updater
+- `BITWARDEN_APPDATA_DIR`: Custom app data directory
+- `PORTABLE_EXECUTABLE_DIR`: Windows portable mode
+
+## macOS Extension Build Variants
+
+The macOS autofill extension can be built for different targets:
+
+```bash
+# Standard macOS app
+npm run build:macos-extension:mac
+
+# Mac App Store
+npm run build:macos-extension:mas
+
+# Mac App Store Development
+npm run build:macos-extension:masdev
+```
+
+Each runs `./desktop_native/autofill_provider/build.sh` with the appropriate target parameter.
+
+## Cleaning Build Artifacts
+
+```bash
+npm run clean:dist
+```
+
+Removes the `./dist` directory containing packaged builds.
+
+## Post-Install
+
+After `npm install`, the app automatically rebuilds native modules:
+
+```bash
+npm run postinstall  # Runs electron-rebuild
+```
+
+This ensures native modules are compiled for the correct Electron version.
+
+## Testing Builds
+
+### Directory Output (No Packaging)
+
+```bash
+npm run pack:dir
+```
+
+Creates an unpacked build in `./dist` without creating installers. Useful for testing.
+
+### Distribution Build
+
+```bash
+npm run dist:dir
+```
+
+Builds and creates unpacked directory (combines `build` + `pack:dir`).

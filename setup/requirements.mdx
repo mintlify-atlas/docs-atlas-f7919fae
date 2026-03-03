@@ -1,0 +1,422 @@
+---
+title: System requirements
+description: Required software, tools, and system specifications for developing Bitwarden client applications
+---
+
+# System requirements
+
+This page outlines the software, tools, and system requirements needed to develop Bitwarden client applications.
+
+## Universal requirements
+
+These requirements apply to all applications in the repository:
+
+### Node.js
+
+<Info>
+  **Required version:** Node.js >= 22.12.0
+  
+  The repository specifies v22 in `.nvmrc` and enforces `>= 22.12.0` in package.json engines.
+</Info>
+
+**Installation options:**
+
+<Tabs>
+  <Tab title="nvm (recommended)">
+    Using Node Version Manager automatically uses the correct version:
+    
+    ```bash
+    # Install nvm (if not already installed)
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+    
+    # Install and use the correct Node version
+    nvm install
+    nvm use
+    ```
+    
+    The `.nvmrc` file in the repository root specifies the exact version.
+  </Tab>
+  
+  <Tab title="Direct download">
+    Download Node.js 22.12.0 or later from [nodejs.org](https://nodejs.org/):
+    
+    ```bash
+    # Verify installation
+    node --version  # Should show v22.12.0 or higher
+    ```
+  </Tab>
+  
+  <Tab title="Package managers">
+    Install via your system's package manager:
+    
+    ```bash
+    # macOS (Homebrew)
+    brew install node@22
+    
+    # Ubuntu/Debian
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    
+    # Windows (Chocolatey)
+    choco install nodejs --version=22.12.0
+    ```
+  </Tab>
+</Tabs>
+
+### npm
+
+<Info>
+  **Required version:** npm ~10 (npm 10.x.x)
+  
+  Comes bundled with Node.js 22.12.0+
+</Info>
+
+```bash
+# Verify npm version
+npm --version  # Should show 10.x.x
+
+# Update npm if needed
+npm install -g npm@10
+```
+
+### Git
+
+**Required for:** Cloning the repository and version control
+
+```bash
+# Verify installation
+git --version  # Any recent version is fine
+
+# Install if needed
+# macOS: Included with Xcode Command Line Tools
+xcode-select --install
+
+# Ubuntu/Debian
+sudo apt-get install git
+
+# Windows: Download from git-scm.com
+```
+
+## Application-specific requirements
+
+### Browser extension
+
+**Supported browsers for development:**
+
+<Tabs>
+  <Tab title="Chrome/Chromium">
+    - **Chrome:** Version 90 or later
+    - **Chromium:** Latest version
+    - **Brave, Vivaldi, Edge:** Based on Chromium, should work
+    
+    **Development:**
+    ```bash
+    cd apps/browser
+    npm run build:chrome
+    # Load unpacked extension from build/
+    ```
+  </Tab>
+  
+  <Tab title="Firefox">
+    - **Firefox:** Version 90 or later
+    - **Firefox Developer Edition:** Recommended for development
+    
+    **Development:**
+    ```bash
+    cd apps/browser
+    npm run build:firefox
+    # Load temporary add-on from build/
+    ```
+  </Tab>
+  
+  <Tab title="Safari">
+    - **macOS:** 13.0 (Ventura) or later
+    - **Xcode:** Required for Safari extension development
+    
+    **Development:**
+    ```bash
+    cd apps/browser
+    npm run build:safari
+    # Convert to Safari extension using Xcode
+    ```
+  </Tab>
+</Tabs>
+
+**Build requirements:**
+
+- **Memory:** 8 GB RAM minimum (builds use `--max-old-space-size=8192`)
+- **Disk space:** ~2 GB for dependencies and build artifacts
+
+### Desktop application
+
+**Platform-specific requirements:**
+
+<Tabs>
+  <Tab title="Windows">
+    **Required:**
+    - Windows 10 or later (64-bit)
+    - Visual Studio Build Tools 2019 or later
+    - Python 3.x (for node-gyp)
+    
+    **Installation:**
+    ```powershell
+    # Install build tools
+    npm install --global windows-build-tools
+    
+    # Or install Visual Studio with C++ workload
+    # Download from visualstudio.microsoft.com
+    ```
+    
+    **Native modules:**
+    - Desktop app includes Rust native modules
+    - Rust toolchain required for building native components
+  </Tab>
+  
+  <Tab title="macOS">
+    **Required:**
+    - macOS 11.0 (Big Sur) or later
+    - Xcode Command Line Tools
+    - Rust toolchain (for native modules)
+    
+    **Installation:**
+    ```bash
+    # Install Xcode Command Line Tools
+    xcode-select --install
+    
+    # Install Rust
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    
+    # For building native autofill module
+    cd apps/desktop/desktop_native
+    ./autofill_provider/build.sh
+    ```
+    
+    **For macOS extension:**
+    - Xcode 14+ required
+    - Apple Developer account for signing
+  </Tab>
+  
+  <Tab title="Linux">
+    **Required:**
+    - Ubuntu 20.04+ / Debian 11+ / Fedora 35+ or equivalent
+    - Build essentials
+    - Rust toolchain
+    
+    **Installation:**
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install build-essential pkg-config libssl-dev
+    
+    # Fedora
+    sudo dnf install gcc gcc-c++ make pkg-config openssl-devel
+    
+    # Install Rust
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+    
+    **For packaging:**
+    - Flatpak: `flatpak-builder` for building Flatpak packages
+    - Snap: `snapcraft` for building snap packages
+  </Tab>
+</Tabs>
+
+**Electron version:** 39.2.6 (specified in package.json)
+
+**System resources:**
+- **Memory:** 4 GB RAM minimum, 8 GB recommended
+- **Disk space:** ~3 GB for dependencies and build artifacts
+
+### Web vault
+
+**Development server requirements:**
+
+- **Node.js:** 22.12.0+ (see universal requirements)
+- **npm:** 10.x (see universal requirements)
+- **Memory:** 4 GB RAM minimum (webpack dev server)
+- **Disk space:** ~1.5 GB for dependencies
+
+**Browser for testing:**
+
+- Chrome/Firefox/Safari/Edge (latest versions)
+- Modern browser with ES2016+ support
+
+**Development:**
+
+```bash
+cd apps/web
+npm run build:oss:watch  # Development server
+# Serves at http://localhost:8080
+```
+
+### Command-line interface
+
+**Runtime requirements:**
+
+- **Node.js:** 22.12.0+ for development
+- **For distribution:** Packaged binaries have no Node.js requirement
+
+**Build requirements:**
+
+<Tabs>
+  <Tab title="Development build">
+    Only requires Node.js and npm:
+    
+    ```bash
+    cd apps/cli
+    npm run build:oss
+    node build/bw.js --help
+    ```
+  </Tab>
+  
+  <Tab title="Native executables">
+    Uses `@yao-pkg/pkg` to create standalone executables:
+    
+    ```bash
+    # Windows
+    npm run dist:oss:win  # Creates dist/oss/windows/bw.exe
+    
+    # macOS (x64)
+    npm run dist:oss:mac  # Creates dist/oss/macos/bw
+    
+    # macOS (ARM64)
+    npm run dist:oss:mac-arm64
+    
+    # Linux (x64)
+    npm run dist:oss:lin  # Creates dist/oss/linux/bw
+    
+    # Linux (ARM64)
+    npm run dist:oss:lin-arm64
+    ```
+    
+    No additional runtime dependencies.
+  </Tab>
+</Tabs>
+
+## Development tools
+
+### Recommended
+
+While not strictly required, these tools significantly improve the development experience:
+
+**Code editor:**
+
+- **Visual Studio Code** (recommended) - Repository includes VS Code configuration
+  - Extensions: ESLint, Prettier, Angular Language Service
+  - Workspace file: `clients.code-workspace`
+
+**Version control:**
+
+- **Git client** - Command line or GUI (GitKraken, GitHub Desktop, etc.)
+
+**Build tools:**
+
+- **Nx Console** - VS Code extension for running Nx commands
+- **concurrently** - Included in devDependencies for parallel builds
+
+### Optional
+
+These tools are helpful for specific tasks:
+
+**Docker:**
+
+- For testing self-hosted web vault deployments
+- Not required for development
+
+**Package managers (CLI distribution):**
+
+- **Homebrew** (macOS/Linux) - For testing CLI installation
+- **Chocolatey** (Windows) - For testing CLI installation
+- **Snap** (Linux) - For testing snap package
+
+## System resources
+
+### Minimum requirements
+
+- **CPU:** Dual-core processor
+- **Memory:** 8 GB RAM
+- **Disk:** 10 GB free space (for all apps + dependencies)
+- **Internet:** Required for downloading dependencies
+
+### Recommended
+
+- **CPU:** Quad-core processor or better
+- **Memory:** 16 GB RAM (for running multiple apps simultaneously)
+- **Disk:** 20 GB free space (SSD recommended for faster builds)
+- **Internet:** Broadband connection
+
+## Verification
+
+Run these commands to verify your environment:
+
+```bash
+# Check Node.js version
+node --version
+# Expected: v22.12.0 or higher
+
+# Check npm version
+npm --version
+# Expected: 10.x.x
+
+# Check Git
+git --version
+# Expected: Any recent version
+
+# For desktop development - check Rust (if installed)
+rustc --version
+# Expected: 1.70.0 or higher
+
+# Check Python (for node-gyp on Windows)
+python --version
+# Expected: 3.x.x
+```
+
+## Troubleshooting
+
+### Node version issues
+
+<Warning>
+  If you see errors about Node.js version, ensure you're using Node.js 22.12.0 or later.
+</Warning>
+
+```bash
+# Using nvm (recommended)
+nvm install 22
+nvm use 22
+
+# Verify
+node --version
+```
+
+### Native module build errors
+
+If you encounter errors building native modules:
+
+```bash
+# Rebuild native modules
+cd apps/desktop
+npm run postinstall
+
+# Or rebuild manually
+npx electron-rebuild
+```
+
+### Memory errors during build
+
+If builds fail with out-of-memory errors:
+
+```bash
+# Increase Node.js memory limit (already set in scripts)
+# The browser build uses: --max-old-space-size=8192
+# If still failing, close other applications
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/setup/installation">
+    Clone the repository and install dependencies
+  </Card>
+  <Card title="Building" icon="hammer" href="/setup/building">
+    Build and run the applications
+  </Card>
+</CardGroup>

@@ -1,0 +1,207 @@
+---
+title: CLI Overview
+description: Command-line interface for Bitwarden vault management
+---
+
+The Bitwarden CLI is a powerful, full-featured command-line interface tool to access and manage a Bitwarden vault. Built with TypeScript and Node.js, the CLI runs on Windows, macOS, and Linux distributions.
+
+## Use Cases
+
+The CLI is designed for:
+
+- **DevOps and CI/CD**: Integrate vault access into automated workflows and deployment pipelines
+- **Scripting**: Automate password management and secret retrieval in scripts
+- **Server Management**: Access credentials on headless servers and remote systems
+- **Power Users**: Manage vault items efficiently from the terminal
+- **API Mode**: Run as a RESTful API server for programmatic access
+
+## Installation
+
+### NPM
+
+If you have Node.js installed, NPM is the recommended installation method:
+
+```bash
+npm install -g @bitwarden/cli
+```
+
+Verify installation:
+
+```bash
+bw --version
+# 2026.2.0
+```
+
+### Native Executables
+
+Natively packaged versions are available with no Node.js runtime requirement. Download from the [official downloads page](https://help.bitwarden.com/article/cli/#download--install).
+
+### Package Managers
+
+<Tabs>
+  <Tab title="Chocolatey (Windows)">
+    ```powershell
+    choco install bitwarden-cli
+    ```
+  </Tab>
+  <Tab title="Homebrew (macOS)">
+    ```bash
+    brew install bitwarden-cli
+    ```
+    
+    <Warning>
+    The Homebrew version uses the GPL build and does not include device approval commands for Enterprise SSO customers.
+    </Warning>
+  </Tab>
+  <Tab title="Snap (Linux)">
+    ```bash
+    sudo snap install bw
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start
+
+### Login and Unlock
+
+```bash
+# Log in to your account
+bw login
+
+# Unlock your vault
+bw unlock
+
+# Set session key (from unlock output)
+export BW_SESSION="your-session-key"
+```
+
+### Basic Operations
+
+```bash
+# Sync vault data
+bw sync
+
+# List all items
+bw list items
+
+# Search for items
+bw list items --search google
+
+# Get a password
+bw get password google.com
+
+# Generate a password
+bw generate -lusn --length 18
+```
+
+## Global Options
+
+All commands support these global options:
+
+<ParamField path="--pretty" type="boolean">
+  Format JSON output with two-space indentation
+</ParamField>
+
+<ParamField path="--raw" type="boolean">
+  Return raw output instead of descriptive messages
+</ParamField>
+
+<ParamField path="--response" type="boolean">
+  Return JSON-formatted response output
+</ParamField>
+
+<ParamField path="--quiet" type="boolean">
+  Suppress all output to stdout
+</ParamField>
+
+<ParamField path="--nointeraction" type="boolean">
+  Disable interactive prompts for user input
+</ParamField>
+
+<ParamField path="--session" type="string">
+  Pass session key instead of reading from environment
+</ParamField>
+
+<ParamField path="--cleanexit" type="boolean">
+  Exit with code 0 even on errors (useful for scripting)
+</ParamField>
+
+## Environment Variables
+
+The CLI respects several environment variables for configuration:
+
+<ParamField path="BW_SESSION" type="string">
+  Session key for vault operations. Set after unlocking:
+  ```bash
+  export BW_SESSION="$(bw unlock --raw)"
+  ```
+</ParamField>
+
+<ParamField path="BW_RESPONSE" type="boolean">
+  When set to `"true"`, all output is structured JSON. Equivalent to `--response` flag.
+  
+  <Warning>
+  Always output structured Response objects when this is enabled. Never use free-form text that would break JSON parsing.
+  </Warning>
+</ParamField>
+
+<ParamField path="BW_QUIET" type="boolean">
+  When set to `"true"`, suppresses all stdout output. Equivalent to `--quiet` flag.
+</ParamField>
+
+<ParamField path="BW_CLEANEXIT" type="boolean">
+  When set to `"true"`, exits with code 0 even on errors. Required for some scripting environments.
+</ParamField>
+
+<ParamField path="BW_PRETTY" type="boolean">
+  Format JSON output with indentation when set to `"true"`.
+</ParamField>
+
+<ParamField path="BW_RAW" type="boolean">
+  Return raw output instead of descriptive messages when set to `"true"`.
+</ParamField>
+
+<ParamField path="BW_NOINTERACTION" type="boolean">
+  Disable interactive prompts when set to `"true"`.
+</ParamField>
+
+<ParamField path="BW_SERVE" type="boolean">
+  Automatically set to `"true"` when running in serve mode.
+</ParamField>
+
+## Help System
+
+The CLI is self-documented with comprehensive help:
+
+```bash
+# Global help
+bw --help
+
+# Command-specific help
+bw list --help
+bw create --help
+bw generate --help
+```
+
+## Architecture
+
+The CLI is structured with modular programs:
+
+- **Program** (`src/program.ts`): Core commands (login, logout, lock, unlock, sync, generate, encode, config, update, status)
+- **VaultProgram** (`src/vault.program.ts`): Vault operations (list, get, create, edit, delete, archive, restore, share, confirm, import, export)
+- **SendProgram** (`src/tools/send/send.program.ts`): Send operations (create, list, get, edit, delete, receive)
+- **ServeProgram** (`src/serve.program.ts`): RESTful API server mode
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="./commands">
+    Complete reference for all CLI commands
+  </Card>
+  <Card title="Building from Source" icon="code" href="./building">
+    Build and package the CLI yourself
+  </Card>
+  <Card title="Serve Mode" icon="server" href="./serve-mode">
+    Run CLI as a RESTful API server
+  </Card>
+</CardGroup>

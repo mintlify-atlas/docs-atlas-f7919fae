@@ -1,0 +1,435 @@
+---
+title: Common Library
+description: Platform abstractions, models, and services structure in @bitwarden/common
+---
+
+The `@bitwarden/common` library is the foundation of the Bitwarden Clients codebase, providing platform-agnostic abstractions, models, and services that are shared across all client applications.
+
+## Library Structure
+
+The common library is organized into feature domains and core platform functionality:
+
+```
+libs/common/src/
+├── abstractions/          # Core service abstractions
+├── admin-console/         # Organization and admin features
+├── auth/                  # Authentication and authorization
+├── autofill/             # Autofill functionality
+├── billing/              # Billing and subscription
+├── enums/                # Shared enumerations
+├── key-management/       # Cryptographic key management
+├── models/               # Domain models
+├── platform/             # Platform abstractions and services
+├── services/             # Shared service implementations
+├── tools/                # Utility tools
+├── types/                # TypeScript type definitions
+└── vault/                # Vault and cipher management
+```
+
+## Core Components
+
+<CardGroup cols={2}>
+  <Card title="Platform Abstractions" icon="cube">
+    Abstract service interfaces for storage, crypto, logging, and more
+  </Card>
+  
+  <Card title="Domain Models" icon="shapes">
+    Encrypted domain objects and decryptable view models
+  </Card>
+  
+  <Card title="Service Layer" icon="server">
+    Business logic implementations and API integrations
+  </Card>
+  
+  <Card title="Type System" icon="file-code">
+    Shared types, enums, and interfaces
+  </Card>
+</CardGroup>
+
+## Platform Abstractions
+
+The platform layer provides core abstractions that applications must implement for their specific runtime environment.
+
+### Key Abstractions
+
+#### Storage Service
+
+Provides an abstraction for key-value storage:
+
+```typescript
+// libs/common/src/platform/abstractions/storage.service.ts
+export abstract class StorageService {
+  abstract get<T>(key: string): Promise<T>;
+  abstract set<T>(key: string, value: T): Promise<void>;
+  abstract remove(key: string): Promise<void>;
+  abstract has(key: string): Promise<boolean>;
+}
+```
+
+**Platform Implementations:**
+- Browser: Chrome storage API
+- Desktop: Electron secure storage
+- Web: localStorage/sessionStorage
+- CLI: File system JSON storage
+
+#### Platform Utils Service
+
+Provides platform-specific utilities and device information:
+
+```typescript
+// libs/common/src/platform/abstractions/platform-utils.service.ts
+export abstract class PlatformUtilsService {
+  abstract getDevice(): DeviceType;
+  abstract getDeviceString(): string;
+  abstract getClientType(): ClientType;
+  abstract isFirefox(): boolean;
+  abstract isChrome(): boolean;
+  abstract launchUri(uri: string, options?: any): void;
+  abstract getApplicationVersion(): Promise<string>;
+  abstract supportsWebAuthn(win: Window): boolean;
+  abstract supportsAutofill(): boolean;
+}
+```
+
+#### I18n Service
+
+Handles internationalization and localization:
+
+```typescript
+// libs/common/src/platform/abstractions/i18n.service.ts
+export abstract class I18nService extends TranslationService {
+  abstract userSetLocale$: Observable<string | undefined>;
+  abstract locale$: Observable<string>;
+  abstract setLocale(locale: string | null): Promise<void>;
+  abstract init(): Promise<void>;
+}
+```
+
+#### Messaging Service
+
+Enables cross-component and cross-context communication:
+
+```typescript
+// libs/common/src/platform/abstractions/messaging.service.ts
+export abstract class MessagingService {
+  abstract send(subscriber: string, arg?: any): void;
+}
+```
+
+### Other Platform Services
+
+<AccordionGroup>
+  <Accordion title="Log Service">
+    Provides logging functionality with different log levels (debug, info, warning, error).
+    
+    ```typescript
+    export abstract class LogService {
+      abstract debug(message: string): void;
+      abstract info(message: string): void;
+      abstract warning(message: string): void;
+      abstract error(message: string): void;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Environment Service">
+    Manages environment-specific URLs and configuration for different deployment environments.
+    
+    ```typescript
+    export abstract class EnvironmentService {
+      abstract getUrls(): Promise<EnvironmentUrls>;
+      abstract setUrls(urls: EnvironmentUrls): Promise<void>;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="State Service">
+    Provides state management and persistence across the application.
+    
+    ```typescript
+    export abstract class StateService {
+      abstract getActiveUserId(): Promise<UserId>;
+      abstract setActiveUser(userId: UserId): Promise<void>;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Models Architecture
+
+The common library uses a three-layer model architecture:
+
+### 1. Data Models
+
+Represent raw data from API or storage:
+
+```typescript
+// libs/common/src/vault/models/data/cipher.data.ts
+export class CipherData {
+  id: string;
+  organizationId: string;
+  folderId: string;
+  type: CipherType;
+  name: string;  // Encrypted
+  notes: string; // Encrypted
+  favorite: boolean;
+  // ... more fields
+}
+```
+
+### 2. Domain Models
+
+Encapsulate business logic and handle encryption:
+
+```typescript
+// libs/common/src/vault/models/domain/cipher.ts
+export class Cipher extends Domain {
+  id: string;
+  name: EncString;  // Encrypted string
+  type: CipherType;
+  login?: Login;
+  card?: Card;
+  identity?: Identity;
+  
+  constructor(obj?: CipherData) {
+    super();
+    if (obj) {
+      this.id = obj.id;
+      this.name = new EncString(obj.name);
+      // ...
+    }
+  }
+  
+  async decrypt(key: SymmetricCryptoKey): Promise<CipherView> {
+    const view = new CipherView(this);
+    view.name = await this.decryptString(this.name, key);
+    // Decrypt other fields
+    return view;
+  }
+}
+```
+
+### 3. View Models
+
+Decrypted, user-facing models for UI rendering:
+
+```typescript
+// libs/common/src/vault/models/view/cipher.view.ts
+export class CipherView {
+  id: string;
+  name: string;  // Decrypted
+  notes: string; // Decrypted
+  type: CipherType;
+  favorite: boolean;
+  login?: LoginView;
+  card?: CardView;
+  // ... more fields
+}
+```
+
+### Domain Base Class
+
+All domain models extend the `Domain` base class which provides encryption/decryption utilities:
+
+```typescript
+// libs/common/src/platform/models/domain/domain-base.ts
+export default class Domain {
+  protected async decryptObj<D, V>(
+    domain: D,
+    viewModel: V,
+    props: string[],
+    key: SymmetricCryptoKey
+  ): Promise<V> {
+    // Decrypt specified properties from domain to view model
+  }
+}
+```
+
+## Service Structure
+
+Services in the common library follow a consistent pattern:
+
+### Service Organization
+
+```
+libs/common/src/vault/
+├── abstractions/
+│   ├── cipher.service.ts          # Abstract interface
+│   └── folder.service.ts
+├── services/
+│   ├── cipher.service.ts          # Implementation
+│   └── folder.service.ts
+└── models/
+    ├── domain/                     # Domain models
+    ├── data/                       # Data models
+    └── view/                       # View models
+```
+
+### Example: Cipher Service
+
+**Abstraction:**
+
+```typescript
+// libs/common/src/vault/abstractions/cipher.service.ts
+export abstract class CipherService {
+  abstract get(id: string): Promise<Cipher | undefined>;
+  abstract getAll(): Promise<Cipher[]>;
+  abstract encrypt(cipher: CipherView, key?: SymmetricCryptoKey): Promise<Cipher>;
+  abstract decrypt(cipher: Cipher): Promise<CipherView>;
+  abstract save(cipher: Cipher): Promise<void>;
+  abstract delete(id: string): Promise<void>;
+}
+```
+
+**Implementation:**
+
+```typescript
+// libs/common/src/vault/services/cipher.service.ts
+export class DefaultCipherService implements CipherService {
+  constructor(
+    private cryptoService: CryptoService,
+    private stateService: StateService,
+    private apiService: ApiService
+  ) {}
+  
+  async get(id: string): Promise<Cipher | undefined> {
+    const ciphers = await this.stateService.getCiphers();
+    return ciphers[id];
+  }
+  
+  async decrypt(cipher: Cipher): Promise<CipherView> {
+    const key = await this.getKeyForCipher(cipher);
+    return await cipher.decrypt(key);
+  }
+  
+  // ... other methods
+}
+```
+
+## Feature Domains
+
+### Authentication
+
+Location: `libs/common/src/auth/`
+
+<CodeGroup>
+```typescript Abstractions
+// Auth service
+export abstract class AuthService {
+  abstract logIn(credentials: LoginCredentials): Promise<AuthResult>;
+  abstract logOut(): Promise<void>;
+  abstract getAuthStatus(): Promise<AuthenticationStatus>;
+}
+```
+
+```typescript Models
+// Auth request
+export class PasswordLoginCredentials {
+  email: string;
+  masterPassword: string;
+  captchaToken?: string;
+  twoFactorToken?: string;
+}
+```
+</CodeGroup>
+
+### Vault Management
+
+Location: `libs/common/src/vault/`
+
+Key abstractions:
+- `CipherService` - Manage vault items (ciphers)
+- `FolderService` - Organize ciphers into folders
+- `CollectionService` - Organization collections
+- `SearchService` - Search and filter vault items
+
+### Key Management
+
+Location: `libs/common/src/key-management/`
+
+Handles cryptographic operations:
+- Key derivation and generation
+- Encryption and decryption
+- Key rotation and management
+
+### Admin Console
+
+Location: `libs/common/src/admin-console/`
+
+Organization and user management:
+- Organization services
+- User invitation and management
+- Policy enforcement
+
+## Enums and Types
+
+### Common Enums
+
+```typescript
+// libs/common/src/enums/device-type.enum.ts
+export enum DeviceType {
+  Android = 0,
+  iOS = 1,
+  ChromeExtension = 2,
+  FirefoxExtension = 3,
+  OperaExtension = 4,
+  EdgeExtension = 5,
+  WindowsDesktop = 6,
+  MacOsDesktop = 7,
+  LinuxDesktop = 8,
+  ChromeBrowser = 9,
+  FirefoxBrowser = 10,
+  // ...
+}
+
+// libs/common/src/vault/enums/cipher-type.ts
+export enum CipherType {
+  Login = 1,
+  SecureNote = 2,
+  Card = 3,
+  Identity = 4,
+  SshKey = 5,
+}
+```
+
+## Import Examples
+
+```typescript
+// Platform abstractions
+import { StorageService } from '@bitwarden/common/platform/abstractions/storage.service';
+import { I18nService } from '@bitwarden/common/platform/abstractions/i18n.service';
+
+// Domain models
+import { Cipher } from '@bitwarden/common/vault/models/domain/cipher';
+import { CipherView } from '@bitwarden/common/vault/models/view/cipher.view';
+
+// Services
+import { CipherService } from '@bitwarden/common/vault/abstractions/cipher.service';
+
+// Enums
+import { CipherType } from '@bitwarden/common/vault/enums/cipher-type';
+import { DeviceType } from '@bitwarden/common/enums/device-type.enum';
+
+// Types
+import { UserId } from '@bitwarden/common/types/guid';
+```
+
+## Related Libraries
+
+<CardGroup cols={2}>
+  <Card title="State Library" icon="database">
+    `@bitwarden/state` - Advanced state management with RxJS observables
+  </Card>
+  
+  <Card title="Storage Core" icon="hard-drive">
+    `@bitwarden/storage-core` - Core storage abstractions and implementations
+  </Card>
+  
+  <Card title="Key Management" icon="key">
+    `@bitwarden/key-management` - Cryptographic key operations
+  </Card>
+  
+  <Card title="Platform Library" icon="server">
+    `@bitwarden/platform` - Platform-specific implementations
+  </Card>
+</CardGroup>

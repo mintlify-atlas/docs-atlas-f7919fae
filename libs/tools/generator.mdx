@@ -1,0 +1,294 @@
+---
+title: Generator
+description: Password and credential generator library for Bitwarden Clients
+---
+
+The Generator library (`libs/tools/generator`) provides comprehensive credential generation functionality for the Bitwarden client applications. This library enables users to create secure passwords, passphrases, and usernames across all Bitwarden platforms.
+
+## Overview
+
+The generator library is split into multiple packages:
+
+- **@bitwarden/generator-core** - Core generation logic, types, and services
+- **@bitwarden/generator-components** - Angular UI components for credential generation
+- **@bitwarden/generator-extensions** - Extension modules (history, navigation, legacy)
+
+## Architecture
+
+The generator library follows a strategy pattern, with each credential type having its own generator strategy implementation.
+
+### Core Abstractions
+
+#### CredentialGeneratorService
+
+The main service interface for generating credentials. Located in `libs/tools/generator/core/src/abstractions/credential-generator-service.abstraction.ts`
+
+**Key Methods:**
+
+```typescript
+abstract class CredentialGeneratorService {
+  // Generate credentials based on request
+  abstract generate$: (
+    dependencies: OnDependency<GenerateRequest> & BoundDependency<"account", Account>,
+  ) => Observable<GeneratedCredential>;
+
+  // Get available algorithms for a credential type
+  abstract algorithms$: (
+    type: CredentialType,
+    dependencies: BoundDependency<"account", Account>,
+  ) => Observable<AlgorithmMetadata[]>;
+
+  // Get user's generator settings
+  abstract settings: <Settings extends object>(
+    metadata: Readonly<GeneratorMetadata<Settings>>,
+    dependencies: BoundDependency<"account", Account>,
+    profile?: GeneratorProfile,
+  ) => UserStateSubject<Settings>;
+
+  // Get policy constraints
+  abstract policy$: <Settings>(
+    metadata: Readonly<GeneratorMetadata<Settings>>,
+    dependencies: BoundDependency<"account", Account>,
+    profile?: GeneratorProfile,
+  ) => Observable<GeneratorConstraints<Settings>>;
+}
+```
+
+#### GeneratorStrategy
+
+Base abstraction for all generator strategies. Located in `libs/tools/generator/core/src/abstractions/generator-strategy.abstraction.ts`
+
+```typescript
+abstract class GeneratorStrategy<Options, Policy> {
+  // Get durable state for user
+  durableState: (userId: UserId) => SingleUserState<Options>;
+
+  // Get default options
+  defaults$: (userId: UserId) => Observable<Options>;
+
+  // Policy type enforced by generator
+  policy: PolicyType;
+
+  // Convert policy to evaluator
+  toEvaluator: () => (
+    source: Observable<AdminPolicy[]>,
+  ) => Observable<PolicyEvaluator<Policy, Options>>;
+
+  // Generate credentials
+  generate: (options: Options) => Promise<string>;
+}
+```
+
+## Generator Strategies
+
+Located in `libs/tools/generator/core/src/strategies/`
+
+### Password Generator
+
+**File:** `password-generator-strategy.ts`
+
+Generates random passwords with configurable character sets.
+
+**Options:**
+
+```typescript
+type PasswordGenerationOptions = {
+  length?: number;           // Password length
+  ambiguous?: boolean;       // Include ambiguous characters
+  uppercase?: boolean;       // Include uppercase letters
+  minUppercase?: number;     // Minimum uppercase count
+  lowercase?: boolean;       // Include lowercase letters
+  minLowercase?: number;     // Minimum lowercase count
+  number?: boolean;          // Include numbers
+  minNumber?: number;        // Minimum number count
+  special?: boolean;         // Include special characters
+  minSpecial?: number;       // Minimum special character count
+  minLength?: number;        // Minimum password length
+};
+```
+
+**Example:**
+
+```typescript
+const strategy = new PasswordGeneratorStrategy(randomizer, stateProvider);
+const password = await strategy.generate({
+  length: 16,
+  uppercase: true,
+  lowercase: true,
+  number: true,
+  special: true,
+  minNumber: 2,
+  minSpecial: 2
+});
+// Result: "Kx9@mP2#nQwErTyU"
+```
+
+### Passphrase Generator
+
+**File:** `passphrase-generator-strategy.ts`
+
+Generates passphrases using random words from the EFF word list.
+
+**Options:**
+
+```typescript
+type PassphraseGenerationOptions = {
+  numWords?: number;         // Number of words (default: 3)
+  wordSeparator?: string;    // Separator character (default: "-")
+  capitalize?: boolean;      // Capitalize first letter of each word
+  includeNumber?: boolean;   // Include a number in the passphrase
+};
+```
+
+**Example:**
+
+```typescript
+const strategy = new PassphraseGeneratorStrategy(randomizer, stateProvider);
+const passphrase = await strategy.generate({
+  numWords: 4,
+  wordSeparator: "-",
+  capitalize: true,
+  includeNumber: true
+});
+// Result: "Correct-Horse-Battery-Staple-42"
+```
+
+### Username Generators
+
+The library includes several username generation strategies:
+
+- **CatchallGeneratorStrategy** - Generates email addresses using catchall domains
+- **SubaddressGeneratorStrategy** - Creates email subaddresses (plus addressing)
+- **EffUsernameGeneratorStrategy** - Generates random usernames from word lists
+- **ForwarderGeneratorStrategy** - Integrates with email forwarding services
+
+## Components
+
+Located in `libs/tools/generator/components/src/`
+
+### CredentialGeneratorComponent
+
+**File:** `credential-generator.component.ts`
+
+Main component for the credential generator UI. Provides a complete interface for generating passwords, passphrases, and usernames.
+
+**Usage:**
+
+```typescript
+import { CredentialGeneratorComponent } from '@bitwarden/generator-components';
+
+@Component({
+  selector: 'app-generator',
+  template: '<credential-generator></credential-generator>'
+})
+export class GeneratorPageComponent {}
+```
+
+### PasswordGeneratorComponent
+
+**File:** `password-generator.component.ts`
+
+Legacy password generator component for backwards compatibility.
+
+### Settings Components
+
+Configurable UI components for each generator type:
+
+- **PasswordSettingsComponent** - Password generator settings
+- **PassphraseSettingsComponent** - Passphrase generator settings
+- **UsernameSettingsComponent** - Username generator settings
+- **ForwarderSettingsComponent** - Email forwarder settings
+- **CatchallSettingsComponent** - Catchall email settings
+- **SubaddressSettingsComponent** - Subaddress settings
+
+## Extensions
+
+Located in `libs/tools/generator/extensions/`
+
+### History Extension
+
+**Package:** `@bitwarden/generator-history`
+
+Stores and manages generation history for users.
+
+### Navigation Extension
+
+**Package:** `@bitwarden/generator-navigation`
+
+Manages navigation state and routing for generator UI.
+
+### Legacy Extension
+
+**Package:** `@bitwarden/generator-legacy`
+
+Provides backwards compatibility with older generator implementations.
+
+## Policy Enforcement
+
+The generator supports enterprise policy enforcement through the `PolicyEvaluator` system. Policies can enforce:
+
+- Minimum password length
+- Required character types (uppercase, lowercase, numbers, special)
+- Minimum character counts per type
+- Passphrase complexity requirements
+
+**Example Policy:**
+
+```typescript
+const policy: PasswordGeneratorPolicy = {
+  minLength: 12,
+  useUppercase: true,
+  useLowercase: true,
+  useNumbers: true,
+  numberCount: 2,
+  useSpecial: true,
+  specialCount: 2
+};
+```
+
+## Integration
+
+The generator library is used across all Bitwarden client applications:
+
+- Web Vault
+- Desktop Application
+- Browser Extension
+- CLI
+
+**Example Integration:**
+
+```typescript
+import { 
+  CredentialGeneratorService,
+  DefaultCredentialGeneratorService,
+  PasswordAlgorithm
+} from '@bitwarden/generator-core';
+
+// Inject the service
+constructor(private generatorService: CredentialGeneratorService) {}
+
+// Generate a password
+async generatePassword() {
+  const credential$ = this.generatorService.generate$({
+    on: { 
+      algorithm: PasswordAlgorithm.Password,
+      request: {
+        length: 16,
+        uppercase: true,
+        lowercase: true,
+        number: true,
+        special: true
+      }
+    },
+    account: this.accountService.activeAccount$
+  });
+
+  const credential = await firstValueFrom(credential$);
+  return credential.credential;
+}
+```
+
+## Related
+
+- [Send Library](/libs/tools/send) - Secure sharing functionality
+- [Export Library](/libs/tools/export) - Vault import/export

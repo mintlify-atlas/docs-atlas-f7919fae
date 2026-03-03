@@ -1,0 +1,461 @@
+---
+title: Web Vault Architecture
+description: Angular architecture, routing, guards, and organization features
+---
+
+The Bitwarden Web Vault is built with Angular using a traditional NgModule-based architecture. This document covers the application structure, routing, guards, and key architectural patterns.
+
+## Application Bootstrap
+
+### Entry Point
+
+The application bootstraps from `apps/web/src/main.ts`:
+
+```typescript
+import { enableProdMode } from "@angular/core";
+import { platformBrowserDynamic } from "@angular/platform-browser-dynamic";
+import { AppModule } from "./app/app.module";
+
+if (process.env.NODE_ENV === "production") {
+  enableProdMode();
+}
+
+void platformBrowserDynamic().bootstrapModule(AppModule);
+```
+
+### App Module Structure
+
+The OSS version (`apps/web/src/app/app.module.ts`):
+
+```typescript
+@NgModule({
+  imports: [
+    OssModule,
+    BrowserAnimationsModule,
+    FormsModule,
+    CoreModule,
+    DragDropModule,
+    LayoutModule,
+    OssRoutingModule,
+    WildcardRoutingModule, // Last to catch all non-existing routes
+  ],
+  declarations: [AppComponent],
+  bootstrap: [AppComponent],
+})
+export class AppModule {}
+```
+
+The commercial version is located at `bitwarden_license/bit-web/app.module.ts` and extends the OSS module with enterprise features.
+
+## Core Module
+
+The Core Module (`apps/web/src/app/core/core.module.ts`) provides foundational services:
+
+- **Dependency Injection**: Sets up all service providers
+- **Client Type**: Registers as `ClientType.Web`
+- **Platform Services**: Web-specific implementations (file download, platform utils, storage)
+- **Authentication Services**: Account, auth, SSO, and user decryption services
+- **Cryptographic Services**: Encryption, key management, and crypto functions
+- **State Management**: Observable storage services for disk and memory
+
+### Key Services
+
+```typescript
+// Location: apps/web/src/app/core/
+{
+  provide: CLIENT_TYPE,
+  useValue: ClientType.Web,
+},
+{
+  provide: PlatformUtilsService,
+  useClass: WebPlatformUtilsService,
+},
+{
+  provide: FileDownloadService,
+  useClass: WebFileDownloadService,
+}
+```
+
+## Routing Architecture
+
+### Main Routing Module
+
+The OSS routing module (`apps/web/src/app/oss-routing.module.ts`) defines the primary application routes:
+
+```typescript
+const routes: Routes = [
+  // Authentication routes
+  { path: AuthWebRoute.Login, component: LoginComponent, ... },
+  { path: AuthWebRoute.Sso, component: SsoComponent, ... },
+  { path: AuthWebRoute.TwoFactor, component: TwoFactorAuthComponent, ... },
+  
+  // Authenticated routes
+  {
+    path: '',
+    component: UserLayoutComponent,
+    canActivate: [authGuard],
+    children: [
+      { path: 'vault', loadChildren: () => VaultModule },
+      { path: 'settings', component: SettingsComponent },
+      // ...
+    ]
+  },
+  
+  // Organization routes
+  {
+    path: 'organizations',
+    loadChildren: () => import('./admin-console/organizations/...'),
+  },
+];
+```
+
+### Lazy Loading
+
+The web vault extensively uses Angular's lazy loading for code splitting:
+
+```typescript
+// Route-based lazy loading
+{
+  path: 'vault',
+  loadChildren: () => VaultModule,
+},
+{
+  path: 'settings',
+  loadChildren: () => import('./settings/organization-settings.module')
+    .then((m) => m.OrganizationSettingsModule),
+}
+```
+
+This reduces initial bundle size and improves load times.
+
+## Organization Routing
+
+### Organization Routes
+
+From `apps/web/src/app/admin-console/organizations/organization-routing.module.ts`:
+
+```typescript
+const routes: Routes = [
+  {
+    path: ":organizationId",
+    component: OrganizationLayoutComponent,
+    canActivate: [
+      deepLinkGuard(),
+      authGuard,
+      organizationPermissionsGuard(canAccessOrgAdmin)
+    ],
+    children: [
+      {
+        path: "",
+        pathMatch: "full",
+        canActivate: [organizationRedirectGuard(getOrganizationRoute)],
+        children: [], // Required for auto redirect
+      },
+      {
+        path: "vault",
+        loadChildren: () => VaultModule,
+      },
+      {
+        path: "members",
+        loadChildren: () => import("./members").then((m) => m.MembersModule),
+      },
+      {
+        path: "groups",
+        component: GroupsComponent,
+        canActivate: [organizationPermissionsGuard(canAccessGroupsTab)],
+      },
+      // Additional organization routes...
+    ],
+  },
+];
+```
+
+### Organization Route Resolution
+
+The redirect guard determines the appropriate landing page based on permissions:
+
+```typescript
+function getOrganizationRoute(organization: Organization): string {
+  if (canAccessVaultTab(organization)) {
+    return "vault";
+  }
+  if (canAccessMembersTab(organization)) {
+    return "members";
+  }
+  if (canAccessGroupsTab(organization)) {
+    return "groups";
+  }
+  if (canAccessReportingTab(organization)) {
+    return "reporting";
+  }
+  if (canAccessSettingsTab(organization)) {
+    return "settings";
+  }
+  return undefined;
+}
+```
+
+This ensures users land on the first page they have permission to access.
+
+## Route Guards
+
+### Authentication Guards
+
+From `@bitwarden/angular/auth/guards`:
+
+- **`authGuard`**: Ensures user is authenticated
+- **`lockGuard`**: Checks if vault is locked
+- **`unauthGuardFn`**: Redirects authenticated users away from auth pages
+- **`tdeDecryptionRequiredGuard`**: Handles trusted device encryption flows
+
+### Organization Permission Guards
+
+Location: `apps/web/src/app/admin-console/organizations/guards/`
+
+#### Organization Permissions Guard
+
+File: `org-permissions.guard.ts`
+
+The primary guard for organization access control:
+
+```typescript
+export function organizationPermissionsGuard(
+  permissionsCallback?: (
+    organization: Organization,
+  ) => boolean | Promise<boolean> | Observable<boolean>,
+): CanActivateFn {
+  return async (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
+    const router = inject(Router);
+    const organizationService = inject(OrganizationService);
+    const toastService = inject(ToastService);
+    const i18nService = inject(I18nService);
+    const syncService = inject(SyncService);
+    const accountService = inject(AccountService);
+    
+    // Get organization from route params
+    const org = await firstValueFrom(
+      accountService.activeAccount$.pipe(
+        getUserId,
+        switchMap((userId) => organizationService.organizations$(userId)),
+        getById(route.params.organizationId),
+      ),
+    );
+    
+    // Check 1: User must be a member
+    if (org == null) {
+      return router.createUrlTree(["/"]);
+    }
+    
+    // Check 2: Organization must be enabled (unless user is owner)
+    if (!org.isOwner && !org.enabled) {
+      toastService.showToast({
+        variant: "error",
+        message: i18nService.t("organizationIsDisabled"),
+      });
+      return router.createUrlTree(["/"]);
+    }
+    
+    // Check 3: Custom permission callback
+    if (permissionsCallback == null) {
+      return true; // No additional checks required
+    }
+    
+    const hasPermissions = await Promise.resolve(
+      runInInjectionContext(environmentInjector, () => permissionsCallback(org))
+    );
+    
+    if (!hasPermissions) {
+      toastService.showToast({
+        variant: "error",
+        message: i18nService.t("accessDenied"),
+      });
+      return canAccessOrgAdmin(org)
+        ? router.createUrlTree(["/organizations", org.id])
+        : router.createUrlTree(["/"]);
+    }
+    
+    return true;
+  };
+}
+```
+
+**Usage example:**
+```typescript
+{
+  path: "vault",
+  canActivate: [organizationPermissionsGuard(canAccessVaultTab)],
+  loadChildren: () => VaultModule,
+}
+```
+
+#### Enterprise Organization Guard
+
+File: `is-enterprise-org.guard.ts`
+
+Checks if an organization is enterprise tier:
+
+```typescript
+export function isEnterpriseOrgGuard(showError: boolean = true): CanActivateFn {
+  return async (route: ActivatedRouteSnapshot, _state: RouterStateSnapshot) => {
+    const router = inject(Router);
+    const organizationService = inject(OrganizationService);
+    const dialogService = inject(DialogService);
+    
+    const org = await firstValueFrom(
+      organizationService
+        .organizations$(userId)
+        .pipe(getOrganizationById(route.params.organizationId)),
+    );
+    
+    if (org == null) {
+      return router.createUrlTree(["/"]);
+    }
+    
+    if (org.productTierType != ProductTierType.Enterprise && showError) {
+      // Show upgrade dialog if user has billing permissions
+      if (org.canEditSubscription) {
+        const upgradeConfirmed = await dialogService.openSimpleDialog({
+          title: { key: "upgradeOrganizationEnterprise" },
+          content: { key: "onlyAvailableForEnterpriseOrganization" },
+          acceptButtonText: { key: "upgradeOrganization" },
+          type: "info",
+        });
+        if (upgradeConfirmed) {
+          await router.navigate(
+            ["organizations", org.id, "billing", "subscription"],
+            { queryParams: { upgrade: true, productTierType: ProductTierType.Enterprise } }
+          );
+        }
+      }
+    }
+    
+    return org.productTierType == ProductTierType.Enterprise;
+  };
+}
+```
+
+#### Additional Guards
+
+- **`is-paid-org.guard.ts`**: Checks if organization has a paid subscription
+- **`org-redirect.guard.ts`**: Handles automatic redirects to appropriate org pages
+
+### Other Guards
+
+- **`deepLinkGuard`**: Handles deep linking scenarios
+- **`premiumInterestRedirectGuard`**: Manages premium feature interest flows
+- **`setupExtensionRedirectGuard`**: Redirects users to extension setup when appropriate
+
+## Multi-Tenant Organization Features
+
+The web vault is designed for enterprise multi-tenant organizations:
+
+### Permission Helpers
+
+From `@bitwarden/common/admin-console/abstractions/organization/organization.service.abstraction`:
+
+- `canAccessOrgAdmin(org)` - Can access admin console
+- `canAccessVaultTab(org)` - Can view organization vault
+- `canAccessMembersTab(org)` - Can manage members
+- `canAccessGroupsTab(org)` - Can manage groups
+- `canAccessReportingTab(org)` - Can view reports
+- `canAccessSettingsTab(org)` - Can modify settings
+
+### Organization Structure
+
+```
+apps/web/src/app/admin-console/organizations/
+├── collections/          # Collection management
+├── core/                 # Shared organization logic
+├── create/               # Organization creation wizard
+├── guards/               # Permission guards
+├── layouts/              # Organization layout components
+├── manage/               # Organization management (groups, etc.)
+├── members/              # Member management
+├── policies/             # Organization policies
+├── reporting/            # Organization reports
+├── settings/             # Organization settings
+├── shared/               # Shared organization components
+├── sponsorships/         # Family/enterprise sponsorships
+└── users/                # User management utilities
+```
+
+### Organization Policies
+
+Organizations can enforce policies on members:
+
+```typescript
+import { organizationPolicyGuard } from '@bitwarden/angular/admin-console/guards';
+import { PolicyType } from '@bitwarden/common/admin-console/enums';
+
+{
+  path: 'feature',
+  canActivate: [
+    authGuard,
+    organizationPolicyGuard(PolicyType.RequireSso)
+  ],
+}
+```
+
+## Environment Selection
+
+The web vault supports region selection for cloud deployments:
+
+**File**: `apps/web/src/app/components/environment-selector/environment-selector.component.ts`
+
+```typescript
+export class EnvironmentSelectorComponent implements OnInit {
+  protected availableRegions = this.environmentService.availableRegions();
+  protected currentRegion?: RegionConfig;
+  protected showRegionSelector = false;
+  
+  async ngOnInit() {
+    // Don't show region selector for self-hosted
+    this.showRegionSelector = !this.platformUtilsService.isSelfHost();
+    
+    const host = Utils.getHost(window.location.href);
+    this.currentRegion = this.availableRegions.find(
+      (r) => Utils.getHost(r.urls.webVault) === host
+    );
+  }
+}
+```
+
+This allows users to switch between US and EU regions in cloud deployments.
+
+## Feature Flags
+
+The web vault uses feature flags for gradual rollouts:
+
+```typescript
+import { canAccessFeature } from '@bitwarden/angular/platform/guard/feature-flag.guard';
+import { FeatureFlag } from '@bitwarden/common/enums/feature-flag.enum';
+
+{
+  path: 'new-feature',
+  canActivate: [canAccessFeature(FeatureFlag.NewFeatureName)],
+  component: NewFeatureComponent,
+}
+```
+
+## State Management
+
+The web vault uses RxJS observables for state management:
+
+- **Observable Storage**: Disk and memory storage with reactive updates
+- **Account Service**: Active account state management
+- **Organization Service**: Organization membership and permissions
+- **Sync Service**: Data synchronization with server
+
+## Testing
+
+The web vault uses Jest for unit testing:
+
+```bash
+# Run tests
+npm test
+
+# Watch mode
+npm run test:watch
+```
+
+Test files are co-located with source files using the `.spec.ts` extension.

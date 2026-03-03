@@ -1,0 +1,323 @@
+---
+title: Messaging Service
+description: Messaging service for type-safe cross-component communication
+---
+
+## Overview
+
+The Messaging Service provides a type-safe mechanism for sending and receiving messages across different components of the application. It supports both legacy string-based commands and modern type-safe command definitions.
+
+## MessageSender
+
+The abstract base class for sending messages throughout the application.
+
+### Interface
+
+```typescript
+abstract class MessageSender {
+  abstract send<T extends Record<string, unknown>>(
+    commandDefinition: CommandDefinition<T>,
+    payload: T,
+  ): void;
+
+  abstract send(command: string, payload?: Record<string, unknown>): void;
+
+  abstract send<T extends Record<string, unknown>>(
+    commandDefinition: CommandDefinition<T> | string,
+    payload: T | Record<string, unknown>,
+  ): void;
+
+  static combine(...messageSenders: MessageSender[]): MessageSender;
+  static readonly EMPTY: MessageSender;
+}
+```
+
+### Methods
+
+#### `send()` (Type-Safe)
+
+```typescript
+abstract send<T extends Record<string, unknown>>(
+  commandDefinition: CommandDefinition<T>,
+  payload: T,
+): void;
+```
+
+Sends a message in a type-safe manner. The command definition ensures the payload matches the expected type.
+
+**Parameters:**
+- `commandDefinition` (`CommandDefinition<T>`): The command definition that specifies the message type and payload structure
+- `payload` (`T`): The message payload, which must match the type defined in the command definition
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+const MY_COMMAND = new CommandDefinition<{ userId: string; action: string }>("userAction");
+
+messageSender.send(MY_COMMAND, { 
+  userId: "123", 
+  action: "login" 
+});
+```
+
+#### `send()` (Legacy)
+
+```typescript
+abstract send(command: string, payload?: Record<string, unknown>): void;
+```
+
+Sends a message using a string-based command (legacy method).
+
+**Parameters:**
+- `command` (string): The command identifier
+- `payload` (`Record<string, unknown>`, optional): The message payload
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+messageSender.send("syncVault", { force: true });
+```
+
+<Note>
+  Consider using CommandDefinition instead of string-based commands to get compilation errors when defining an incompatible payload.
+</Note>
+
+### Static Methods
+
+#### `combine()`
+
+```typescript
+static combine(...messageSenders: MessageSender[]): MessageSender;
+```
+
+Combines multiple message senders into a single sender that relays messages to all of them.
+
+**Parameters:**
+- `messageSenders` (`...MessageSender[]`): The message senders to combine
+
+**Returns:** `MessageSender` - A composite message sender
+
+**Example:**
+```typescript
+const combinedSender = MessageSender.combine(
+  localMessageSender,
+  remoteMessageSender
+);
+
+combinedSender.send(MY_COMMAND, payload); // Sends to both senders
+```
+
+### Static Properties
+
+#### `EMPTY`
+
+```typescript
+static readonly EMPTY: MessageSender;
+```
+
+A message sender that sends to nowhere. Useful for testing or disabled states.
+
+**Example:**
+```typescript
+const sender = isEnabled ? actualSender : MessageSender.EMPTY;
+```
+
+## MessageListener
+
+A class for listening to messages coming through the application.
+
+### Interface
+
+```typescript
+class MessageListener {
+  constructor(messageStream: Observable<Message<Record<string, unknown>>>);
+  
+  allMessages$: Observable<Message<Record<string, unknown>>>;
+  
+  messages$<T extends Record<string, unknown>>(
+    commandDefinition: CommandDefinition<T>,
+  ): Observable<T>;
+  
+  static readonly EMPTY: MessageListener;
+}
+```
+
+### Constructor
+
+```typescript
+constructor(messageStream: Observable<Message<Record<string, unknown>>>)
+```
+
+**Parameters:**
+- `messageStream` (`Observable<Message<Record<string, unknown>>>`): The underlying observable stream of messages
+
+### Properties
+
+#### `allMessages$`
+
+```typescript
+allMessages$: Observable<Message<Record<string, unknown>>>;
+```
+
+A stream of all messages sent through the application. Does not contain type information for message properties.
+
+**Example:**
+```typescript
+messageListener.allMessages$.subscribe((message) => {
+  console.log('Received message:', message.command);
+});
+```
+
+### Methods
+
+#### `messages$<T>()`
+
+```typescript
+messages$<T extends Record<string, unknown>>(
+  commandDefinition: CommandDefinition<T>,
+): Observable<T>;
+```
+
+Creates an observable stream filtered to a specific command with proper typing.
+
+**Parameters:**
+- `commandDefinition` (`CommandDefinition<T>`): The command definition to filter for
+
+**Returns:** `Observable<T>` - Stream of messages matching the command definition
+
+**Example:**
+```typescript
+const USER_LOGIN = new CommandDefinition<{ userId: string }>("userLogin");
+
+messageListener.messages$(USER_LOGIN).subscribe((msg) => {
+  console.log('User logged in:', msg.userId);
+});
+```
+
+<Warning>
+  Be careful using this method unless all messages are sent through `MessageSender.send` with proper command definitions. Otherwise, you should have lower confidence in the message payload being the expected type.
+</Warning>
+
+### Static Properties
+
+#### `EMPTY`
+
+```typescript
+static readonly EMPTY: MessageListener;
+```
+
+A message listener that never emits any messages and immediately completes.
+
+## Types
+
+### CommandDefinition
+
+```typescript
+class CommandDefinition<T extends Record<string, unknown>> {
+  readonly command: string;
+  constructor(command: string);
+}
+```
+
+Defines information about a message type, providing type-safe messaging alongside MessageSender and MessageListener.
+
+**Parameters:**
+- `command` (string): The command identifier
+
+**Example:**
+```typescript
+const SYNC_VAULT = new CommandDefinition<{ force: boolean }>("syncVault");
+const USER_LOGOUT = new CommandDefinition<{}>("userLogout");
+```
+
+### Message
+
+```typescript
+type Message<T extends Record<string, unknown>> = { command: string } & T;
+```
+
+Represents a message with a command identifier and typed payload.
+
+## Usage Examples
+
+### Type-Safe Messaging
+
+```typescript
+// Define command types
+const VAULT_LOCK = new CommandDefinition<{ timeout: number }>("vaultLock");
+const SYNC_COMPLETE = new CommandDefinition<{ itemCount: number }>("syncComplete");
+
+// Send messages
+messageSender.send(VAULT_LOCK, { timeout: 300 });
+messageSender.send(SYNC_COMPLETE, { itemCount: 42 });
+
+// Listen for specific messages
+messageListener.messages$(VAULT_LOCK).subscribe((msg) => {
+  console.log(`Vault will lock in ${msg.timeout} seconds`);
+});
+
+messageListener.messages$(SYNC_COMPLETE).subscribe((msg) => {
+  console.log(`Synced ${msg.itemCount} items`);
+});
+```
+
+### Legacy String-Based Messaging
+
+```typescript
+// Send legacy message
+messageSender.send("refreshUI", { section: "vault" });
+
+// Listen to all messages and filter manually
+messageListener.allMessages$
+  .pipe(filter(msg => msg.command === "refreshUI"))
+  .subscribe((msg) => {
+    console.log('Refreshing UI');
+  });
+```
+
+### Combining Message Senders
+
+```typescript
+const localSender = new LocalMessageSender();
+const remoteSender = new RemoteMessageSender();
+
+// Send to both local and remote
+const multiSender = MessageSender.combine(localSender, remoteSender);
+
+const UPDATE_EVENT = new CommandDefinition<{ data: string }>("update");
+multiSender.send(UPDATE_EVENT, { data: "test" });
+// Message is sent through both senders
+```
+
+### Using Empty Implementations
+
+```typescript
+// Disable messaging in certain contexts
+const sender = config.messagingEnabled 
+  ? new ActualMessageSender() 
+  : MessageSender.EMPTY;
+
+const listener = config.messagingEnabled
+  ? new ActualMessageListener(stream)
+  : MessageListener.EMPTY;
+```
+
+## Best Practices
+
+<Note>
+  Consider NOT using messaging at all if you can. State Providers offer an observable stream of data that is persisted. This can serve use cases that might have previously used messages to notify of settings changes or vault data changes, and those observables should be preferred over messaging.
+</Note>
+
+### When to Use Messaging
+
+- Cross-component event notifications that don't require persistence
+- Triggering actions in response to user events
+- Broadcasting system-wide state changes
+
+### When NOT to Use Messaging
+
+- Persisting data (use State Providers instead)
+- Notifying about data changes (use State Provider observables)
+- Sharing configuration (use State Providers)

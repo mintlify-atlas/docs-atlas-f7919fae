@@ -1,0 +1,532 @@
+---
+title: Manifest V3 Migration
+description: Understanding Manifest V3 changes, service workers, and migration from Manifest V2
+---
+
+Manifest V3 is the latest version of the browser extension platform, bringing significant architectural changes focused on security, privacy, and performance.
+
+## What is Manifest V3?
+
+Manifest V3 is a major update to the browser extension platform that fundamentally changes how extensions work:
+
+- **Service Workers** replace persistent background pages
+- Enhanced security with stricter content security policies
+- Improved privacy with declarative APIs
+- Better performance through resource management
+
+## Browser Support
+
+| Browser | Manifest V3 Support | Default |
+|---------|-------------------|--------|
+| Chrome | ✅ Required (102+) | V3 |
+| Edge | ✅ Required | V3 |
+| Opera | ✅ Required | V3 |
+| Firefox | ✅ Optional (109+) | V2 |
+| Safari | ✅ Optional (15.4+) | V2 |
+
+<Note>
+Chrome and Edge **require** Manifest V3 as of 2024. Firefox and Safari still support Manifest V2 but are transitioning to V3.
+</Note>
+
+## Key Differences from Manifest V2
+
+### Background Pages → Service Workers
+
+The most significant change is the replacement of persistent background pages with service workers.
+
+#### Manifest V2 (Legacy)
+
+```json
+// manifest.json (V2)
+{
+  "manifest_version": 2,
+  "background": {
+    "page": "background.html",
+    "persistent": true
+  }
+}
+```
+
+Background page runs continuously and has access to DOM, `window`, and `document`.
+
+#### Manifest V3 (Current)
+
+```json
+// manifest.v3.json
+{
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  }
+}
+```
+
+Service worker:
+- Can be terminated at any time by the browser
+- No access to DOM, `window`, or `document`
+- Must use message passing for all communication
+- Automatically restarted when needed
+
+### Architecture Implications
+
+<Warning>
+**Critical**: Service workers can be terminated anytime. Do not assume the background context persists indefinitely. Use message passing for all communication and store state in `chrome.storage`.
+</Warning>
+
+**In Manifest V2, this worked:**
+
+```typescript
+// ❌ No longer works in Manifest V3
+const backgroundPage = chrome.extension.getBackgroundPage();
+backgroundPage.vault.getCiphers();
+```
+
+**In Manifest V3, use message passing:**
+
+```typescript
+// ✅ Correct approach for Manifest V3
+const ciphers = await BrowserApi.sendMessageWithResponse<Cipher[]>("getCiphers");
+```
+
+From `browser-api.ts:434`:
+
+```typescript
+/**
+ * Gets the background page for the extension. This method is
+ * not valid within manifest v3 background service workers. As
+ * a result, it will return null when called from that context.
+ */
+static getBackgroundPage(): any {
+  if (typeof chrome.extension.getBackgroundPage === "undefined") {
+    return null;
+  }
+
+  return chrome.extension.getBackgroundPage();
+}
+```
+
+### Action API Changes
+
+#### Manifest V2
+
+```json
+{
+  "browser_action": {
+    "default_icon": "images/icon19.png",
+    "default_title": "Bitwarden",
+    "default_popup": "popup/index.html"
+  }
+}
+```
+
+API: `chrome.browserAction`
+
+#### Manifest V3
+
+```json
+{
+  "action": {
+    "default_icon": {
+      "19": "images/icon19.png",
+      "38": "images/icon38.png"
+    },
+    "default_title": "Bitwarden",
+    "default_popup": "popup/index.html"
+  }
+}
+```
+
+API: `chrome.action`
+
+The `BrowserApi` handles this automatically:
+
+```typescript
+// From browser-api.ts:704
+/**
+ * Returns the supported BrowserAction API based on the manifest version.
+ */
+static getBrowserAction() {
+  return BrowserApi.isManifestVersion(3) ? chrome.action : chrome.browserAction;
+}
+```
+
+### Permissions Changes
+
+#### Host Permissions
+
+Manifest V3 separates host permissions from regular permissions.
+
+**Manifest V2:**
+
+```json
+{
+  "permissions": [
+    "<all_urls>",
+    "*://*/*",
+    "tabs",
+    "storage"
+  ]
+}
+```
+
+**Manifest V3:**
+
+```json
+{
+  "permissions": [
+    "tabs",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ]
+}
+```
+
+Host permissions are now requested separately and can be optional.
+
+#### New Permissions
+
+**Offscreen Permission:**
+
+```json
+{
+  "permissions": [
+    "offscreen"  // Manifest V3 only
+  ]
+}
+```
+
+Used for clipboard operations and other DOM-dependent tasks in service workers.
+
+**Scripting Permission:**
+
+```json
+{
+  "permissions": [
+    "scripting"  // Replaces chrome.tabs.executeScript
+  ]
+}
+```
+
+### Content Security Policy
+
+**Manifest V2:**
+
+```json
+{
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+}
+```
+
+**Manifest V3:**
+
+```json
+{
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}
+```
+
+CSP is now an object with separate policies for extension pages and sandboxed pages.
+
+### Web Request API Changes
+
+Manifest V3 deprecates blocking `webRequest` in favor of `declarativeNetRequest`.
+
+**Manifest V2:**
+
+```json
+{
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking"
+  ]
+}
+```
+
+**Manifest V3:**
+
+```json
+{
+  "permissions": [
+    "webRequest",
+    "webRequestAuthProvider"  // No longer blocking
+  ]
+}
+```
+
+Bitwarden uses `webRequestAuthProvider` for HTTP Basic Auth interception, which is still allowed in MV3.
+
+## Service Worker Lifecycle
+
+### Startup and Termination
+
+Service workers follow an event-driven lifecycle:
+
+```typescript
+// Service worker starts
+self.addEventListener('install', (event) => {
+  console.log('Service worker installing...');
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('Service worker activated');
+});
+
+// Service worker can be terminated after ~30 seconds of inactivity
+// It will restart when:
+// - Extension receives a message
+// - User interacts with extension
+// - Alarm fires
+// - Event listener is triggered
+```
+
+### State Persistence
+
+<Warning>
+**Do not store state in global variables.** Service workers can be terminated, losing all in-memory state. Use `chrome.storage` for persistence.
+</Warning>
+
+**❌ Wrong - Lost on termination:**
+
+```typescript
+// Global state - LOST when service worker terminates
+let vaultTimeout = 15;
+let isLocked = false;
+```
+
+**✅ Correct - Persisted in storage:**
+
+```typescript
+// Store in chrome.storage
+await chrome.storage.session.set({ vaultTimeout: 15 });
+await chrome.storage.local.set({ isLocked: false });
+
+// Retrieve when needed
+const { vaultTimeout } = await chrome.storage.session.get('vaultTimeout');
+```
+
+### Keeping Service Worker Alive
+
+Use alarms for periodic tasks:
+
+```typescript
+// Set recurring alarm
+chrome.alarms.create('vaultTimeoutCheck', {
+  periodInMinutes: 1
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'vaultTimeoutCheck') {
+    // Check vault timeout
+  }
+});
+```
+
+## Migration Strategies
+
+### 1. Replace Background Page Access
+
+**Before (V2):**
+
+```typescript
+const bg = chrome.extension.getBackgroundPage();
+const ciphers = bg.getCiphers();
+```
+
+**After (V3):**
+
+```typescript
+const ciphers = await BrowserApi.sendMessageWithResponse('getCiphers');
+```
+
+### 2. Use Offscreen Documents for DOM
+
+Service workers cannot access DOM. Use offscreen documents:
+
+```typescript
+// Create offscreen document
+await chrome.offscreen.createDocument({
+  url: 'offscreen.html',
+  reasons: ['CLIPBOARD'],
+  justification: 'Write to clipboard'
+});
+
+// Send message to offscreen document
+await BrowserApi.sendMessageWithResponse('offscreenCopyToClipboard', { text });
+```
+
+### 3. Update Script Injection
+
+**Before (V2):**
+
+```typescript
+chrome.tabs.executeScript(tabId, {
+  file: 'content.js'
+});
+```
+
+**After (V3):**
+
+```typescript
+await chrome.scripting.executeScript({
+  target: { tabId },
+  files: ['content.js']
+});
+```
+
+BrowserApi handles this automatically:
+
+```typescript
+await BrowserApi.executeScriptInTab(tabId, { file: 'content.js' });
+```
+
+### 4. Handle Service Worker Termination
+
+Design services to be stateless or restore state quickly:
+
+```typescript
+class VaultService {
+  private ciphers: Cipher[] | null = null;
+
+  async getCiphers(): Promise<Cipher[]> {
+    // Restore from storage if service worker restarted
+    if (this.ciphers === null) {
+      await this.restoreState();
+    }
+    return this.ciphers;
+  }
+
+  private async restoreState() {
+    const data = await chrome.storage.session.get('ciphers');
+    this.ciphers = data.ciphers || [];
+  }
+}
+```
+
+## Building for Different Manifest Versions
+
+### Chrome/Edge (V3 Only)
+
+```bash
+npm run build:chrome
+npm run build:edge
+```
+
+These browsers only support Manifest V3.
+
+### Firefox (V2 or V3)
+
+```bash
+# Manifest V2 (default)
+npm run build:firefox
+
+# Manifest V3
+cross-env MANIFEST_VERSION=3 npm run build:firefox
+```
+
+### Safari (V2 or V3)
+
+```bash
+# Manifest V2 (default)
+npm run build:safari
+
+# Manifest V3
+cross-env MANIFEST_VERSION=3 npm run build:safari
+```
+
+## Testing Manifest V3
+
+Test service worker termination resilience:
+
+<Steps>
+  <Step title="Build Extension">
+    ```bash
+    npm run build:chrome
+    ```
+  </Step>
+  
+  <Step title="Load in Chrome">
+    1. Navigate to `chrome://extensions/`
+    2. Enable Developer mode
+    3. Load unpacked extension from `build/`
+  </Step>
+  
+  <Step title="Open Service Worker DevTools">
+    1. Click "service worker" link in extension card
+    2. DevTools opens for background service worker
+  </Step>
+  
+  <Step title="Test Termination">
+    1. Click "Stop" in service worker DevTools
+    2. Interact with extension (open popup, autofill)
+    3. Service worker should restart and function correctly
+  </Step>
+</Steps>
+
+## Common Migration Issues
+
+### Issue: Background Page Returns Null
+
+**Symptom:**
+
+```typescript
+const bg = chrome.extension.getBackgroundPage(); // null
+```
+
+**Solution:**
+
+Use message passing instead:
+
+```typescript
+const result = await BrowserApi.sendMessageWithResponse('getData');
+```
+
+### Issue: DOM Not Available
+
+**Symptom:**
+
+```typescript
+document.createElement('div'); // ReferenceError: document is not defined
+```
+
+**Solution:**
+
+Use offscreen documents or move DOM operations to content scripts:
+
+```typescript
+await BrowserApi.sendMessageWithResponse('offscreenCreateElement');
+```
+
+### Issue: State Lost After Inactivity
+
+**Symptom:**
+
+Global variables reset to initial values after 30 seconds.
+
+**Solution:**
+
+Store state in `chrome.storage`:
+
+```typescript
+// Persist state
+await chrome.storage.session.set({ myState: value });
+
+// Restore state
+const { myState } = await chrome.storage.session.get('myState');
+```
+
+## Resources
+
+- [Chrome Manifest V3 Migration Guide](https://developer.chrome.com/docs/extensions/migrating/)
+- [Firefox Manifest V3 Support](https://extensionworkshop.com/documentation/develop/manifest-v3-migration-guide/)
+- [MDN Web Extensions](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions)
+
+## Next Steps
+
+- [Architecture](/apps/browser/architecture) - Understanding the extension architecture
+- [Building](/apps/browser/building) - Build commands for different browsers

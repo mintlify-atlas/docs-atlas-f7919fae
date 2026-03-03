@@ -1,0 +1,103 @@
+---
+title: Web Vault Overview
+description: Angular-based web application for accessing Bitwarden vault
+---
+
+The Bitwarden Web Vault is an Angular application that provides web-based access to the Bitwarden password manager. It powers the vault available at https://vault.bitwarden.com/ and can be deployed to both cloud and self-hosted environments.
+
+## Key Characteristics
+
+### Browser Context Limitations
+
+The web vault runs in a standard browser context and **does not have access to browser extension APIs**:
+
+- No `chrome.*` or `browser.*` APIs available
+- Cannot import or use `BrowserApi` or extension-specific code
+- All functionality must work within standard web browser capabilities
+
+This is a critical distinction from the Browser Extension (`apps/browser/`), which has access to privileged browser APIs.
+
+### Multi-Tenant Organization Support
+
+The web vault is designed for enterprise and organizational use:
+
+- Full support for multi-tenant organization features
+- Complex permission systems for enterprise organizations
+- Organization permission guards in `apps/web/src/app/admin-console/organizations/guards/`
+
+### Storage Considerations
+
+**Critical**: All sensitive operations must work without relying on persistent local storage:
+
+- Web vault may run in environments that clear storage aggressively (e.g., incognito mode, browser policies)
+- Don't rely on `localStorage`/`sessionStorage` for security-critical data
+- Implement proper session management and server-side state where needed
+
+## Deployment Environments
+
+The web vault supports multiple deployment configurations:
+
+### Cloud Environments
+
+- **Production (US)**: `ENV=cloud` - Bitwarden's US cloud infrastructure
+- **QA**: `ENV=qa` - US quality assurance environment
+- **US Development**: `ENV=usdev` - US development environment
+- **EU Production**: `ENV=euprd` - European production environment
+- **EU QA**: `ENV=euqa` - European quality assurance environment
+- **Enterprise Edition**: `ENV=ee` - Enterprise-specific builds
+
+### Self-Hosted Environments
+
+- **Self-Hosted**: `ENV=selfhosted` - For on-premises deployments
+- Supports both OSS (open source) and commercial builds
+
+### Development
+
+- **Development**: `ENV=development` - Local development with debugging enabled
+
+## Architecture Overview
+
+The web vault is built on Angular and uses:
+
+- **Angular Modules**: Traditional NgModule-based architecture
+- **Webpack**: Build system with environment-specific configurations
+- **TypeScript**: Type-safe application code
+- **Lazy Loading**: Route-based code splitting for performance
+
+### Main Application Modules
+
+- **OSS Module** (`apps/web/src/app/oss.module.ts`): Open source version
+- **Bit Module** (`bitwarden_license/bit-web/`): Commercial version with enterprise features
+- **Core Module** (`apps/web/src/app/core/`): Core services and providers
+
+### Major Feature Areas
+
+```
+apps/web/src/app/
+├── admin-console/        # Organization management, policies, settings
+│   ├── organizations/    # Multi-tenant organization features
+│   └── settings/         # Admin settings and configuration
+├── auth/                 # Authentication and user management
+├── billing/              # Subscription and billing management
+├── vault/                # Individual vault features
+├── key-management/       # Cryptographic key operations
+├── secrets-manager/      # Secrets Manager features
+└── tools/                # Password generator, Send, etc.
+```
+
+## Version Information
+
+The web vault version is defined in `apps/web/package.json`:
+
+```json
+{
+  "name": "@bitwarden/web-vault",
+  "version": "2026.2.1"
+}
+```
+
+## Related Documentation
+
+- [Building the Web Vault](./building.mdx)
+- [Web Vault Architecture](./architecture.mdx)
+- [Browser Extension](/apps/browser/overview.mdx) - Different from web vault

@@ -1,0 +1,390 @@
+---
+title: Architecture
+description: Understand the monorepo architecture, shared libraries, and how applications interact
+---
+
+# Architecture
+
+The Bitwarden Clients repository is an Nx-powered monorepo that provides a unified development experience across four client applications while maximizing code reuse through shared libraries.
+
+## Monorepo structure
+
+The repository follows a clear separation between applications and shared code:
+
+```
+bitwarden/clients/
+├── apps/                 # Client applications
+├── libs/                 # Shared libraries
+├── bitwarden_license/    # Commercial features
+├── scripts/              # Build and automation
+└── [config files]        # Workspace configuration
+```
+
+### Applications directory
+
+Each application in `apps/` is a standalone project with its own build configuration:
+
+```
+apps/
+├── browser/
+│   ├── src/
+│   ├── package.json          # Scripts and browser-specific deps
+│   ├── webpack.config.js     # Browser extension bundling
+│   └── manifest.json         # Extension manifest (generated)
+├── cli/
+│   ├── src/
+│   ├── package.json          # CLI-specific dependencies
+│   └── webpack.config.js     # Node.js bundling
+├── desktop/
+│   ├── src/
+│   │   ├── main/            # Electron main process
+│   │   ├── renderer/        # Angular renderer process
+│   │   └── preload/         # Preload scripts
+│   ├── desktop_native/      # Rust native modules
+│   └── package.json         # Electron and native deps
+└── web/
+    ├── src/
+    ├── package.json         # Web-specific scripts
+    └── webpack.config.js    # Web vault bundling
+```
+
+### Shared libraries
+
+The `libs/` directory contains 35+ shared libraries organized by domain:
+
+<Tabs>
+  <Tab title="Core libraries">
+    **Platform-agnostic business logic:**
+
+    - `@bitwarden/common` - Core business logic, models, and services
+    - `@bitwarden/platform` - Platform abstractions (storage, crypto, messaging)
+    - `@bitwarden/vault` - Vault management and cipher operations
+    - `@bitwarden/auth` - Authentication and identity
+    - `@bitwarden/state` - State management and persistence
+  </Tab>
+  <Tab title="UI libraries">
+    **User interface components:**
+
+    - `@bitwarden/components` - Shared Angular component library
+    - `@bitwarden/angular` - Angular utilities and base classes
+    - `@bitwarden/assets` - Icons, images, and static assets
+    - `@bitwarden/ui-common` - Common UI utilities
+  </Tab>
+  <Tab title="Feature libraries">
+    **Specific functionality:**
+
+    - `@bitwarden/admin-console` - Organization and admin features
+    - `@bitwarden/billing` - Subscription and payment handling
+    - `@bitwarden/importer-core` - Password import functionality
+    - `@bitwarden/generator-core` - Password/username generation
+    - `@bitwarden/send-ui` - Send (secure sharing) features
+    - `@bitwarden/vault-export-core` - Vault export utilities
+  </Tab>
+  <Tab title="Infrastructure">
+    **Development tooling:**
+
+    - `@bitwarden/eslint` - Custom ESLint rules
+    - `@bitwarden/nx-plugin` - Nx workspace plugins
+    - `@bitwarden/core-test-utils` - Testing utilities
+    - `@bitwarden/node` - Node.js-specific utilities
+  </Tab>
+</Tabs>
+
+## Nx workspace
+
+The repository uses Nx for build orchestration and caching:
+
+### Configuration
+
+```json nx.json
+{
+  "defaultBase": "main",
+  "parallel": 4,
+  "cacheDirectory": ".nx/cache",
+  "plugins": [
+    "@nx/js",
+    "@nx/jest/plugin",
+    "@nx/eslint/plugin",
+    "@bitwarden/nx-plugin"
+  ]
+}
+```
+
+### Build targets
+
+Nx automatically discovers and caches build targets:
+
+- **build** - Compile TypeScript and bundle applications
+- **test** - Run Jest unit tests
+- **lint** - Run ESLint checks
+
+### Dependency graph
+
+Nx tracks dependencies between libraries and applications:
+
+```bash
+# View the dependency graph
+npx nx graph
+
+# Build only affected projects
+npx nx affected:build
+
+# Test only affected projects
+npx nx affected:test
+```
+
+## TypeScript path mapping
+
+The repository uses TypeScript path aliases to import shared libraries:
+
+```json tsconfig.base.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bitwarden/common/*": ["./libs/common/src/*"],
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/components": ["./libs/components/src"],
+      "@bitwarden/vault": ["./libs/vault/src"],
+      // ... 50+ path mappings
+    }
+  }
+}
+```
+
+### Usage in applications
+
+```typescript
+// Instead of relative paths:
+import { CipherService } from '../../../libs/common/src/vault/services/cipher.service';
+
+// Use clean path aliases:
+import { CipherService } from '@bitwarden/common/vault/services/cipher.service';
+```
+
+## Application architecture patterns
+
+### Browser extension
+
+**Architecture:** Multi-context extension (service worker, popup, content scripts)
+
+```
+browser/
+├── background/           # Service worker (MV3)
+├── popup/               # Popup UI (Angular)
+├── content/             # Content scripts (autofill)
+├── platform/            # Browser API abstractions
+└── services/            # Extension-specific services
+```
+
+**Key abstraction:** `BrowserApi` wraps all browser extension APIs for cross-browser compatibility.
+
+### Desktop application
+
+**Architecture:** Electron multi-process (main + renderer)
+
+```
+desktop/
+├── main/                # Main process (Node.js)
+│   └── main.ts         # Electron entry point
+├── renderer/            # Renderer process (Angular)
+│   └── app/            # Angular application
+├── preload/             # Preload scripts (IPC bridge)
+└── desktop_native/      # Rust native modules
+```
+
+**Key pattern:** IPC communication between main and renderer processes.
+
+### Web vault
+
+**Architecture:** Standard Angular SPA
+
+```
+web/
+├── app/
+│   ├── vault/          # Vault management
+│   ├── admin-console/  # Organization admin
+│   ├── billing/        # Subscription management
+│   └── layouts/        # Page layouts
+└── services/           # Web-specific services
+```
+
+**Key feature:** Multi-tenant organization support with role-based permissions.
+
+### CLI
+
+**Architecture:** Node.js command-line application
+
+```
+cli/
+├── commands/           # CLI commands
+├── models/             # Request/response models
+├── services/           # CLI-specific services
+└── bw.ts              # Entry point
+```
+
+**Key pattern:** Structured JSON output for scripting with `--response` flag.
+
+## Dependency injection
+
+All applications use dependency injection for service management:
+
+### Service container pattern
+
+```typescript
+// Each app has a ServiceContainer
+class ServiceContainer {
+  cryptoService: CryptoService;
+  stateService: StateService;
+  vaultTimeoutService: VaultTimeoutService;
+  // ... dozens of services
+
+  async init() {
+    // Initialize services in dependency order
+    this.cryptoService = new CryptoService();
+    this.stateService = new StateService();
+    // ...
+  }
+}
+```
+
+### Angular services
+
+Angular apps use standard Angular DI:
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class VaultService {
+  constructor(
+    private cipherService: CipherService,
+    private folderService: FolderService,
+  ) {}
+}
+```
+
+## State management
+
+The repository uses a custom state management system:
+
+```typescript
+// Observable state with persistence
+const emailState = new KeyState<string>(
+  'email',
+  {
+    deserializer: (value) => value,
+    // Automatically persists to storage
+  }
+);
+
+// Subscribe to state changes
+emailState.state$.subscribe(email => {
+  console.log('Email changed:', email);
+});
+```
+
+## Build system
+
+Each application has dedicated build scripts:
+
+<CodeGroup>
+
+```json Browser
+{
+  "scripts": {
+    "build:chrome": "cross-env BROWSER=chrome MANIFEST_VERSION=3 webpack",
+    "build:firefox": "cross-env BROWSER=firefox webpack",
+    "build:safari": "cross-env BROWSER=safari webpack"
+  }
+}
+```
+
+```json Desktop
+{
+  "scripts": {
+    "build": "concurrently \"build:main\" \"build:renderer\" \"build:preload\"",
+    "build:main": "webpack --config-name main",
+    "build:renderer": "webpack --config-name renderer"
+  }
+}
+```
+
+```json Web
+{
+  "scripts": {
+    "build:oss": "webpack",
+    "build:bit": "webpack -c ../../bitwarden_license/bit-web/webpack.config.js"
+  }
+}
+```
+
+```json CLI
+{
+  "scripts": {
+    "build:oss": "webpack",
+    "build:oss:prod": "cross-env NODE_ENV=production webpack"
+  }
+}
+```
+
+</CodeGroup>
+
+## Workspace features
+
+### npm workspaces
+
+The repository uses npm workspaces for dependency management:
+
+```json package.json
+{
+  "workspaces": [
+    "apps/*",
+    "apps/desktop/desktop_native/napi",
+    "libs/**/*"
+  ]
+}
+```
+
+**Benefits:**
+- Single `node_modules` at root
+- Shared dependencies across all packages
+- Faster installs with hoisting
+
+### Shared configuration
+
+Common configuration files apply to all apps:
+
+- `tsconfig.base.json` - TypeScript settings and path mappings
+- `eslint.config.mjs` - Code style and quality rules
+- `jest.config.js` - Test framework configuration
+- `.prettierrc.json` - Code formatting rules
+
+## Commercial features
+
+The `bitwarden_license/` directory contains commercial/enterprise features:
+
+```
+bitwarden_license/
+├── bit-browser/        # Browser extension commercial features
+├── bit-cli/            # CLI commercial features
+├── bit-web/            # Web vault commercial features
+└── bit-common/         # Shared commercial libraries
+```
+
+These are built separately and merged during production builds.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/setup/installation">
+    Set up the repository locally
+  </Card>
+  <Card title="Building" icon="hammer" href="/setup/building">
+    Build and run applications
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing">
+    Learn the development workflow
+  </Card>
+  <Card title="Requirements" icon="list-check" href="/setup/requirements">
+    Review system requirements
+  </Card>
+</CardGroup>

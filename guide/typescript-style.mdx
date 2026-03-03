@@ -1,0 +1,287 @@
+---
+title: TypeScript Style Guide
+description: TypeScript configuration, patterns, and best practices
+---
+
+This guide covers TypeScript configuration and coding patterns used across the Bitwarden client applications.
+
+## TypeScript Configuration
+
+The project uses a centralized TypeScript configuration in `tsconfig.base.json` that is extended by individual packages.
+
+### Compiler Options
+
+#### Type Checking
+
+```json
+{
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": true
+  }
+}
+```
+
+**Key settings:**
+- `strict: false` - Strict mode is disabled at the base level
+- `noImplicitAny: true` - Must explicitly type variables (no implicit `any`)
+- Uses `typescript-strict-plugin` for gradual strict mode adoption per file
+
+#### Module Configuration
+
+```json
+{
+  "compilerOptions": {
+    "moduleResolution": "node",
+    "target": "ES2016",
+    "module": "ES2020",
+    "lib": ["es5", "es6", "es7", "dom", "ES2021", "ESNext.Disposable"]
+  }
+}
+```
+
+- **Target:** ES2016 for broad compatibility
+- **Module:** ES2020 for modern module features
+- **Lib:** Includes ESNext.Disposable for resource management
+
+#### Decorator Support
+
+```json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false
+  }
+}
+```
+
+Required for Angular dependency injection and decorators.
+
+### Path Mappings
+
+The project uses extensive path mappings to enable clean imports across the monorepo:
+
+```typescript
+// Instead of:
+import { Something } from '../../../common/src/services/something';
+
+// Use:
+import { Something } from '@bitwarden/common/services/something';
+```
+
+**Available path prefixes:**
+- `@bitwarden/common/*` - Core shared logic
+- `@bitwarden/angular/*` - Angular-specific utilities
+- `@bitwarden/auth/*` - Authentication modules
+- `@bitwarden/components` - Component library
+- `@bitwarden/vault` - Vault-specific code
+- `@bitwarden/platform` - Platform abstractions
+- And many more (see `tsconfig.base.json:20-74` for full list)
+
+### Build Configuration
+
+```json
+{
+  "compilerOptions": {
+    "declaration": false,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowJs": true
+  }
+}
+```
+
+## TypeScript Patterns
+
+### Explicit Types
+
+**Required:** Always specify types for function parameters and return values.
+
+```typescript
+// Good
+function getUser(id: string): Promise<User> {
+  return userService.get(id);
+}
+
+// Bad - implicit any
+function getUser(id) {
+  return userService.get(id);
+}
+```
+
+### Avoid `any`
+
+While `@typescript-eslint/no-explicit-any` is currently disabled, avoid using `any` types.
+
+```typescript
+// Preferred
+function processData(data: unknown): void {
+  if (typeof data === 'string') {
+    // TypeScript now knows data is a string
+  }
+}
+
+// Avoid
+function processData(data: any): void {
+  // No type safety
+}
+```
+
+### Member Accessibility
+
+Per ESLint rules (`@typescript-eslint/explicit-member-accessibility`), omit `public` keyword:
+
+```typescript
+// Good
+class UserService {
+  private apiUrl: string;
+  protected cache: Map<string, User>;
+  
+  getUser(id: string): User {  // No 'public' needed
+    return this.cache.get(id);
+  }
+}
+
+// Bad
+class UserService {
+  public getUser(id: string): User {  // Unnecessary 'public'
+    return this.cache.get(id);
+  }
+}
+```
+
+### Promises
+
+Always await or handle promises (`@typescript-eslint/no-floating-promises`):
+
+```typescript
+// Good
+await userService.save(user);
+
+// Good - intentionally not awaited
+void userService.save(user);
+
+// Bad - floating promise
+userService.save(user);
+```
+
+### Unused Variables
+
+Function arguments named `_` or unused are allowed (`@typescript-eslint/no-unused-vars`):
+
+```typescript
+// Allowed
+array.map((_, index) => index);
+
+function callback(error: Error, data: Data) {
+  // 'error' parameter unused but required by signature
+  return data;
+}
+```
+
+## Gradual Strict Mode
+
+The project uses `typescript-strict-plugin` to enable strict mode on a per-file basis:
+
+```typescript
+// Add to the top of files ready for strict mode
+// @ts-strict-enabled
+```
+
+This allows gradual migration to full strict mode without breaking the entire codebase.
+
+## Import Best Practices
+
+### Use Path Mappings
+
+Always prefer `@bitwarden/*` imports over relative paths:
+
+```typescript
+// Good
+import { CryptoService } from '@bitwarden/common/platform/abstractions/crypto.service';
+
+// Avoid
+import { CryptoService } from '../../../platform/abstractions/crypto.service';
+```
+
+### Alphabetize Imports
+
+Imports are automatically organized by ESLint (`import/order`):
+
+```typescript
+import { Component } from '@angular/core';
+import { FormBuilder } from '@angular/forms';
+
+import { CryptoService } from '@bitwarden/common/platform/abstractions/crypto.service';
+import { I18nService } from '@bitwarden/common/platform/abstractions/i18n.service';
+
+import { UserService } from 'src/app/services/user.service';
+```
+
+Order:
+1. Built-in/external packages (alphabetically)
+2. `@bitwarden/*` packages (alphabetically)
+3. `src/` relative imports (alphabetically)
+4. Blank lines between groups
+
+## Type Safety Tools
+
+### Running Type Checks
+
+```bash
+npm run test:types
+```
+
+This runs type checking across the entire codebase using the test-types script.
+
+### ESLint Type-Aware Rules
+
+Many ESLint rules require type information and use `tsconfig.eslint.json`:
+
+```json
+{
+  "languageOptions": {
+    "parserOptions": {
+      "project": ["./tsconfig.eslint.json"]
+    }
+  }
+}
+```
+
+This enables advanced rules like:
+- `@typescript-eslint/no-floating-promises`
+- `@typescript-eslint/no-misused-promises`
+- Type-aware import resolution
+
+## Common Patterns
+
+### Ternary Expressions
+
+Ternary expressions in statements are allowed (`@typescript-eslint/no-unused-expressions`):
+
+```typescript
+// Allowed
+condition ? doSomething() : doSomethingElse();
+```
+
+### This Aliasing
+
+Only `self` is allowed as an alias for `this` (`@typescript-eslint/no-this-alias`):
+
+```typescript
+// Allowed
+const self = this;
+subscription.subscribe(() => {
+  self.update();
+});
+
+// Not allowed
+const that = this;
+```
+
+## Next Steps
+
+- Review [Angular Patterns](/guide/angular-patterns) for Angular-specific TypeScript patterns
+- See [Linting](/guide/linting) for ESLint configuration and rules

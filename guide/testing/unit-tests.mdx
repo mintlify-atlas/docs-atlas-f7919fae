@@ -1,0 +1,417 @@
+---
+title: Unit Testing
+description: Jest configuration, test patterns, and mocking strategies
+---
+
+## Overview
+
+The Bitwarden clients repository uses **Jest** as the primary testing framework for unit tests. Tests are co-located with source files using the `.spec.ts` naming convention.
+
+## Jest Configuration
+
+### Root Configuration
+
+The main Jest configuration is located at `jest.config.js`:
+
+```javascript
+const { pathsToModuleNameMapper } = require("ts-jest");
+const { compilerOptions } = require("./tsconfig.base");
+
+module.exports = {
+  reporters: ["default", "jest-junit"],
+  
+  collectCoverage: true,
+  collectCoverageFrom: ["src/**/*.ts"],
+  coverageReporters: ["html", "lcov"],
+  coverageDirectory: "coverage",
+  
+  moduleNameMapper: pathsToModuleNameMapper(compilerOptions?.paths || {}, {
+    prefix: "<rootDir>/",
+  }),
+  
+  // Multi-project configuration
+  projects: [
+    "<rootDir>/apps/browser/jest.config.js",
+    "<rootDir>/apps/cli/jest.config.js",
+    "<rootDir>/libs/common/jest.config.js",
+    // ... and more
+  ],
+  
+  // Performance optimization
+  maxWorkers: 3,
+};
+```
+
+### Library-Level Configuration
+
+Each library has its own Jest configuration (e.g., `libs/common/jest.config.js`):
+
+```javascript
+const { pathsToModuleNameMapper } = require("ts-jest");
+const { compilerOptions } = require("../../tsconfig.base");
+const sharedConfig = require("../shared/jest.config.ts");
+
+module.exports = {
+  ...sharedConfig,
+  displayName: "libs/common tests",
+  preset: "ts-jest",
+  testEnvironment: "jsdom",
+  setupFilesAfterEnv: ["<rootDir>/test.setup.ts"],
+  moduleNameMapper: pathsToModuleNameMapper(compilerOptions?.paths || {}, {
+    prefix: "<rootDir>/../../",
+  }),
+};
+```
+
+### Shared Configuration
+
+The shared Jest configuration (`libs/shared/jest.config.ts.js`) provides common settings:
+
+```javascript
+module.exports = {
+  testMatch: ["**/+(*.)+(spec).+(ts)"],
+  
+  maxWorkers: 3, // Memory leak workaround
+  
+  setupFiles: ["<rootDir>/../../libs/shared/polyfill-node-globals.ts"],
+  
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        tsconfig: "<rootDir>/tsconfig.spec.json",
+        isolatedModules: true, // Performance optimization
+        astTransformers: {
+          before: ["<rootDir>/../../libs/shared/es2020-transformer.ts"],
+        },
+      },
+    ],
+  },
+};
+```
+
+## Test Commands
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode (clear cache first)
+npm run test:watch
+
+# Watch all tests
+npm run test:watch:all
+
+# Run tests for specific project
+npm test -- --project=libs/common
+```
+
+### Additional Test Commands
+
+```bash
+# Type checking
+npm run test:types
+
+# Locale testing
+npm run test:locales
+
+# Storybook tests
+npm run test-stories
+npm run test-stories:watch
+```
+
+## Test Patterns
+
+### Basic Service Test
+
+Example from `libs/vault/src/services/copy-cipher-field.service.spec.ts`:
+
+```typescript
+import { mock, MockProxy } from "jest-mock-extended";
+import { of } from "rxjs";
+
+import { EventCollectionService } from "@bitwarden/common/abstractions/event/event-collection.service";
+import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
+import { CopyCipherFieldService } from "@bitwarden/vault";
+
+describe("CopyCipherFieldService", () => {
+  let service: CopyCipherFieldService;
+  let platformUtilsService: MockProxy<PlatformUtilsService>;
+  let toastService: MockProxy<ToastService>;
+  
+  beforeEach(() => {
+    platformUtilsService = mock<PlatformUtilsService>();
+    toastService = mock<ToastService>();
+    
+    service = new CopyCipherFieldService(
+      platformUtilsService,
+      toastService,
+      // ... other dependencies
+    );
+  });
+  
+  describe("copy", () => {
+    it("should copy value to clipboard", async () => {
+      const result = await service.copy("test", "username", cipher);
+      
+      expect(result).toBeTruthy();
+      expect(platformUtilsService.copyToClipboard).toHaveBeenCalledWith("test");
+    });
+    
+    it("should return early when valueToCopy is null", async () => {
+      const result = await service.copy(null, "username", cipher);
+      
+      expect(result).toBeFalsy();
+      expect(platformUtilsService.copyToClipboard).not.toHaveBeenCalled();
+    });
+  });
+});
+```
+
+### Angular Component Test
+
+Example from `libs/vault/src/components/totp-countdown/totp-countdown.component.spec.ts`:
+
+```typescript
+import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { mock } from "jest-mock-extended";
+import { of } from "rxjs";
+
+import { TotpService } from "@bitwarden/common/vault/abstractions/totp.service";
+import { BitTotpCountdownComponent } from "./totp-countdown.component";
+
+describe("BitTotpCountdownComponent", () => {
+  let component: BitTotpCountdownComponent;
+  let fixture: ComponentFixture<BitTotpCountdownComponent>;
+  let totpService: jest.Mocked<TotpService>;
+  
+  const mockCipher = {
+    id: "cipher-id",
+    name: "Test Cipher",
+    login: { totp: "totp-secret" },
+  } as CipherView;
+  
+  beforeEach(async () => {
+    totpService = mock<TotpService>({
+      getCode$: jest.fn().mockReturnValue(of({ code: "123456", period: 30 })),
+    });
+    
+    await TestBed.configureTestingModule({
+      providers: [
+        { provide: TotpService, useValue: totpService }
+      ],
+    }).compileComponents();
+    
+    fixture = TestBed.createComponent(BitTotpCountdownComponent);
+    component = fixture.componentInstance;
+    component.cipher = mockCipher;
+    fixture.detectChanges();
+  });
+  
+  it("initializes totpInfo$ observable", (done) => {
+    component.totpInfo$?.subscribe((info) => {
+      expect(info.totpCode).toBe("123456");
+      expect(info.totpCodeFormatted).toBe("123 456");
+      done();
+    });
+  });
+});
+```
+
+## Mocking Strategies
+
+### Using jest-mock-extended
+
+The repository uses `jest-mock-extended` for type-safe mocking:
+
+```typescript
+import { mock, MockProxy } from "jest-mock-extended";
+
+// Create a mock with all methods
+const mockService = mock<MyService>();
+
+// Configure specific methods
+mockService.myMethod.mockResolvedValue("result");
+mockService.anotherMethod.mockReturnValue(42);
+```
+
+### Mocking Observables
+
+```typescript
+import { of } from "rxjs";
+
+// Mock observable return value
+accountService.activeAccount$ = of({ id: userId } as Account);
+
+// Mock method returning observable
+totpService.getCode$.mockReturnValue(of({ code: "123456", period: 30 }));
+```
+
+### Test Utilities
+
+The repository provides test utilities in dedicated packages:
+
+- **`@bitwarden/core-test-utils`** - Core testing utilities
+- **`@bitwarden/state-test-utils`** - State management test helpers
+- **`@bitwarden/storage-test-utils`** - Storage mocking utilities
+
+Example from `libs/common/spec/fake-account-service.ts`:
+
+```typescript
+import { mockAccountServiceWith } from "@bitwarden/common/spec/fake-account-service";
+
+// Create a mock account service with predefined data
+const accountService = mockAccountServiceWith(
+  userId,
+  { name: "Test User", email: "test@example.com" }
+);
+```
+
+## Test Setup Files
+
+Each library can have a `test.setup.ts` file for custom configuration:
+
+```typescript
+// libs/common/test.setup.ts
+import "core-js/proposals/explicit-resource-management";
+import { webcrypto } from "crypto";
+import { addCustomMatchers } from "./spec";
+
+// Polyfill for crypto in Node environment
+Object.defineProperty(window, "crypto", {
+  value: webcrypto,
+});
+
+// Add custom Jest matchers
+addCustomMatchers();
+```
+
+## Coverage
+
+Coverage is configured to:
+
+- Collect from all `.ts` files in `src/` directories
+- Generate HTML and LCOV reports
+- Output to `coverage/` directory
+- Use `jest-junit` reporter for CI integration
+
+```bash
+# View coverage after running tests
+open coverage/index.html
+```
+
+## Best Practices
+
+### 1. Test Structure
+
+- Use descriptive `describe` blocks to group related tests
+- Name tests with "should" statements: `it("should return null when...")`
+- Follow Arrange-Act-Assert pattern
+
+### 2. Mocking
+
+- Mock all external dependencies
+- Use `jest-mock-extended` for type safety
+- Reset mocks between tests with `beforeEach`
+
+### 3. Async Testing
+
+```typescript
+// For observables
+it("should emit value", (done) => {
+  observable$.subscribe((value) => {
+    expect(value).toBe(expected);
+    done();
+  });
+});
+
+// For promises
+it("should resolve", async () => {
+  const result = await service.myMethod();
+  expect(result).toBe(expected);
+});
+```
+
+### 4. Test Organization
+
+- Co-locate tests with source files: `my-service.ts` → `my-service.spec.ts`
+- Use nested `describe` blocks for complex test suites
+- Group related test cases together
+
+### 5. Performance
+
+- Tests run with `maxWorkers: 3` to prevent memory issues
+- Use `isolatedModules: true` for faster compilation
+- Avoid unnecessary setup in `beforeEach`
+
+## Common Patterns
+
+### Testing Password Reprompt
+
+```typescript
+describe("password reprompt", () => {
+  beforeEach(() => {
+    cipher.reprompt = CipherRepromptType.Password;
+  });
+  
+  it("should show password prompt when required", async () => {
+    passwordRepromptService.showPasswordPrompt.mockResolvedValue(true);
+    
+    const result = await service.copy("value", "password", cipher);
+    
+    expect(result).toBeTruthy();
+    expect(passwordRepromptService.showPasswordPrompt).toHaveBeenCalled();
+  });
+  
+  it("should return early when prompt is cancelled", async () => {
+    passwordRepromptService.showPasswordPrompt.mockResolvedValue(false);
+    
+    const result = await service.copy("value", "password", cipher);
+    
+    expect(result).toBeFalsy();
+  });
+});
+```
+
+### Testing Event Collection
+
+```typescript
+it("should collect an event", async () => {
+  await service.performAction(cipher);
+  
+  expect(eventCollectionService.collect).toHaveBeenCalledWith(
+    EventType.Cipher_ClientCopiedPassword,
+    cipher.id,
+    false,
+    cipher.organizationId
+  );
+});
+```
+
+## Troubleshooting
+
+### Memory Issues
+
+If tests crash due to memory:
+
+1. Check `maxWorkers` is set to 3
+2. Verify `isolatedModules: true` in ts-jest config
+3. Clear Jest cache: `npm run test:watch` (includes `--clearCache`)
+
+### Type Errors
+
+If TypeScript types aren't working:
+
+1. Ensure `tsconfig.spec.json` is properly configured
+2. Check `moduleNameMapper` paths align with `tsconfig.base.json`
+3. Verify all type dependencies are installed
+
+### Import Resolution
+
+If imports fail:
+
+1. Check `pathsToModuleNameMapper` configuration
+2. Verify the `prefix` matches your directory structure
+3. Ensure barrel exports (`index.ts`) are present

@@ -1,0 +1,481 @@
+---
+title: Component Library
+description: Bitwarden's Angular component library with comprehensive UI components and Storybook documentation
+---
+
+# Component Library
+
+The `@bitwarden/components` library is Bitwarden's comprehensive Angular component library, providing a consistent design system and reusable UI components across all client applications.
+
+## Overview
+
+The component library provides:
+
+- **50+ Production-ready components** - Buttons, forms, dialogs, tables, and more
+- **Storybook integration** - Interactive component documentation and testing
+- **Tailwind CSS styling** - Modern utility-first CSS framework
+- **Accessibility (a11y)** - WCAG-compliant components
+- **Responsive design** - Mobile-first, adaptive layouts
+- **Angular integration** - Built specifically for Angular applications
+
+## Installation
+
+Components are imported from `@bitwarden/components`:
+
+```typescript
+import { ButtonComponent, DialogService, ToastService } from "@bitwarden/components";
+```
+
+## Storybook
+
+The component library uses Storybook for interactive component documentation and development.
+
+### Running Storybook
+
+```bash
+# Start Storybook development server
+npm run storybook
+
+# Build static Storybook site
+npm run build-storybook
+
+# Generate component documentation JSON
+npm run docs:json
+```
+
+Storybook runs on `http://localhost:6006` and includes:
+- Live component previews
+- Interactive props/controls
+- Component documentation
+- Accessibility testing
+- Design system guidelines
+
+### Storybook Configuration
+
+**Location:** `.storybook/main.ts`
+
+The Storybook configuration includes:
+- Stories from multiple libraries (`auth`, `components`, `vault`, etc.)
+- Accessibility addon (a11y)
+- Design addon for Figma integration
+- Theme support
+- MDX documentation support with GitHub Flavored Markdown
+
+```typescript
+// Storybook addons
+addons: [
+  "@storybook/addon-links",
+  "@storybook/addon-a11y",
+  "@storybook/addon-designs",
+  "@storybook/addon-themes",
+  "@storybook/addon-docs"
+]
+```
+
+## Component Categories
+
+### Form Components
+
+**Input Controls:**
+- **Button** (`button/`) - Primary, secondary, danger variants with loading states
+- **Input** (`input/`) - Text inputs with validation
+- **Checkbox** (`checkbox/`) - Checkbox controls
+- **Radio Button** (`radio-button/`) - Radio button groups
+- **Select** (`select/`) - Dropdown select menus
+- **Multi Select** (`multi-select/`) - Multi-selection dropdowns
+- **Chip Select** (`chip-select/`) - Tag-based selection
+- **Switch** (`switch/`) - Toggle switches
+- **Search** (`search/`) - Search input components
+
+**Form Infrastructure:**
+- **Form Field** (`form-field/`) - Form field wrapper with labels and hints
+- **Form Control** (`form-control/`) - Form control base
+- **Form** (`form/`) - Form container and validation
+
+```typescript
+import { ButtonComponent } from "@bitwarden/components";
+
+@Component({
+  template: `
+    <button bitButton buttonType="primary" [loading]="isLoading">
+      Save Changes
+    </button>
+  `
+})
+export class MyComponent {
+  isLoading = false;
+}
+```
+
+### Layout Components
+
+**Containers:**
+- **Container** (`container/`) - Content containers
+- **Card** (`card/`) - Card layouts
+- **Section** (`section/`) - Content sections
+- **Layout** (`layout/`) - Page layouts
+- **Header** (`header/`) - Page headers
+
+**Navigation:**
+- **Navigation** (`navigation/`) - Navigation components
+- **Tabs** (`tabs/`) - Tab navigation
+  - `TabGroupComponent` - Tab container
+  - `TabNavBarComponent` - Navigation-based tabs
+  - `TabComponent` - Individual tab
+- **Breadcrumbs** (`breadcrumbs/`) - Breadcrumb navigation
+- **Menu** (`menu/`) - Dropdown menus
+
+**Specialized Layouts:**
+- **Anon Layout** (`anon-layout/`) - Anonymous/login layouts
+- **Landing Layout** (`landing-layout/`) - Marketing page layouts
+
+### Feedback Components
+
+**Notifications:**
+- **Toast** (`toast/`) - Toast notification system
+  - `ToastService` - Programmatic toast management
+  - Auto-dismiss and manual dismiss options
+- **Banner** (`banner/`) - Alert banners
+- **Callout** (`callout/`) - Highlighted information boxes
+
+**Loading States:**
+- **Spinner** (`spinner/`) - Loading spinners
+- **Progress** (`progress/`) - Progress bars
+- **Skeleton** (`skeleton/`) - Skeleton loading screens
+
+**User Feedback:**
+- **Dialog** (`dialog/`) - Modal dialogs
+  - `DialogService` - Programmatic dialog management
+  - Confirmation dialogs
+  - Custom content dialogs
+- **Popover** (`popover/`) - Contextual popovers
+- **Tooltip** (`tooltip/`) - Hover tooltips
+
+```typescript
+import { ToastService } from "@bitwarden/components";
+
+@Component({
+  // ...
+})
+export class MyComponent {
+  constructor(private toastService: ToastService) {}
+
+  showSuccess() {
+    this.toastService.showToast({
+      variant: "success",
+      title: "Success",
+      message: "Operation completed successfully"
+    });
+  }
+}
+```
+
+### Data Display Components
+
+**Tables:**
+- **Table** (`table/`) - Data tables
+  - `TableComponent` - Base table
+  - `TableScrollComponent` - Scrollable tables
+  - `TableDataSource` - Data source abstraction
+  - `SortableComponent` - Sortable columns
+  - Row and cell directives
+
+**Lists:**
+- **Badge List** (`badge-list/`) - Badge collections
+- **Item** (`item/`) - List items
+- **No Items** (`no-items/`) - Empty state component
+
+**Visual Elements:**
+- **Avatar** (`avatar/`) - User avatars
+- **Badge** (`badge/`) - Status badges
+- **Icon** (`icon/`) - Icon system
+- **Icon Button** (`icon-button/`) - Icon-only buttons
+- **Icon Tile** (`icon-tile/`) - Icon tiles
+- **SVG** (`svg/`) - SVG components
+
+### Utility Components
+
+**Interactions:**
+- **Async Actions** (`async-actions/`) - Async action handling
+- **Copy Click** (`copy-click/`) - Click-to-copy functionality
+- **Disclosure** (`disclosure/`) - Expandable/collapsible content
+- **Toggle Group** (`toggle-group/`) - Toggle button groups
+
+**Specialized:**
+- **Color Password** (`color-password/`) - Password strength visualization
+- **Stepper** (`stepper/`) - Multi-step wizards
+- **Berry** (`berry/`) - Special UI element
+
+**Observers:**
+- **Resize Observer** (`resize-observer/`) - Element resize detection
+
+## Accessibility (a11y)
+
+**Location:** `libs/components/src/a11y/`
+
+Accessibility utilities and directives:
+
+```typescript
+import { AriaDisableDirective, ariaDisableElement } from "@bitwarden/components";
+
+// Use directive in template
+<button [ariaDisable]="isDisabled">Click Me</button>
+
+// Or use utility function
+ariaDisableElement(element, true);
+```
+
+## Styling System
+
+### Tailwind CSS
+
+Components use Tailwind CSS for styling:
+
+**Configuration Files:**
+- `tailwind.config.js` - Main Tailwind configuration
+- `tailwind.config.base.js` - Base configuration
+- `tw-theme.css` - Theme definitions
+- `tw-theme-preflight.css` - Preflight/reset styles
+
+### Theme System
+
+**Styles:**
+- `theme.css` - Component theme variables
+- `variables.scss` - SCSS variables
+
+**Typography:**
+- **Typography Module** (`typography/`) - Typography directives and styles
+- Web fonts (Inter) included in `webfonts/`
+
+## Utilities
+
+**Location:** `libs/components/src/utils/`
+
+Utility functions and helpers:
+
+- **DOM Observables** (`dom-observables.ts`) - DOM event observables
+- **Function to Observable** (`function-to-observable.ts`) - Convert functions to observables
+- **Has Scrollable Content** (`has-scrollable-content.ts`) - Detect scrollable elements
+- **Has Scrolled From** (`has-scrolled-from.ts`) - Scroll position detection
+- **Responsive Utils** (`responsive-utils.ts`) - Responsive design utilities
+- **I18n Mock Service** (`i18n-mock.service.ts`) - Testing utilities
+- **State Mock** (`state-mock.ts`) - State mocking for tests
+
+## Component Structure
+
+Typical component directory structure:
+
+```
+button/
+├── button.component.ts       # Component logic
+├── button.component.html     # Template
+├── button.component.css      # Styles (if needed)
+├── button.component.spec.ts  # Unit tests
+├── button.stories.ts         # Storybook stories
+├── button.mdx                # Storybook documentation
+└── index.ts                  # Public exports
+```
+
+### Component Example
+
+**Location:** `libs/components/src/button/button.component.ts`
+
+```typescript
+import { Component, input, computed, booleanAttribute } from "@angular/core";
+import { ButtonType, ButtonSize } from "../shared/button-like.abstraction";
+
+@Component({
+  selector: "button[bitButton]",
+  template: `...`,
+  standalone: true
+})
+export class ButtonComponent {
+  // Input signals
+  buttonType = input<ButtonType>("primary");
+  size = input<ButtonSize>("default");
+  loading = input(false, { transform: booleanAttribute });
+  disabled = input(false, { transform: booleanAttribute });
+  
+  // Computed styles
+  classes = computed(() => this.buildClasses());
+}
+```
+
+## Testing
+
+### Unit Tests
+
+```bash
+# Run tests
+npm run test
+
+# Watch mode
+npm run test:watch
+```
+
+### Testing Utilities
+
+Mock services for testing:
+- `i18n-mock.service.ts` - Mock internationalization
+- `state-mock.ts` - Mock state management
+
+## Storybook Stories
+
+Stories are located alongside components with `.stories.ts` extension.
+
+### Story Example
+
+```typescript
+import { Meta, StoryObj } from "@storybook/angular";
+import { ButtonComponent } from "./button.component";
+
+export default {
+  title: "Component Library/Button",
+  component: ButtonComponent,
+  args: {
+    buttonType: "primary"
+  }
+} as Meta<ButtonComponent>;
+
+type Story = StoryObj<ButtonComponent>;
+
+export const Primary: Story = {
+  args: {
+    buttonType: "primary"
+  }
+};
+
+export const Loading: Story = {
+  args: {
+    loading: true
+  }
+};
+```
+
+## Documentation Stories
+
+**Location:** `libs/components/src/stories/`
+
+Special documentation pages:
+- `introduction.mdx` - Component library introduction
+- `colors.mdx` - Color system documentation
+- `compact-mode.mdx` - Compact mode guide
+- `migration.mdx` - Migration guides
+- `responsive-design.mdx` - Responsive design patterns
+- `virtual-scrolling.mdx` - Virtual scrolling guide
+- `icons/` - Icon system documentation
+- `kitchen-sink/` - Component showcase
+
+## Best Practices
+
+### Component Usage
+
+1. **Use standalone components:**
+   - Modern Angular components are standalone
+   - Import directly where needed
+
+2. **Leverage TypeScript types:**
+   - Use `ButtonType`, `ButtonSize` enums
+   - Strong typing prevents errors
+
+3. **Follow accessibility guidelines:**
+   - Use semantic HTML
+   - Include ARIA labels where needed
+   - Test with screen readers
+
+### Styling
+
+1. **Use Tailwind utilities:**
+   - Prefer utility classes over custom CSS
+   - Follow established design tokens
+
+2. **Maintain consistency:**
+   - Use existing components before creating new ones
+   - Follow the design system
+
+### Storybook Development
+
+1. **Document all component variants:**
+   - Create stories for each state (loading, disabled, etc.)
+   - Include edge cases
+
+2. **Write MDX documentation:**
+   - Explain component purpose and usage
+   - Provide code examples
+   - Document props and events
+
+## Building and Deployment
+
+```bash
+# Build library
+npm run build
+
+# Build with watch
+npm run watch
+
+# Build Storybook for deployment
+npm run build-storybook
+
+# Run Chromatic visual testing
+npm run chromatic
+```
+
+## Integration Examples
+
+### Dialog Service
+
+```typescript
+import { DialogService } from "@bitwarden/components";
+
+export class MyComponent {
+  constructor(private dialogService: DialogService) {}
+
+  async confirmDelete() {
+    const confirmed = await this.dialogService.openSimpleDialog({
+      title: "Confirm Delete",
+      content: "Are you sure?",
+      type: "warning",
+      acceptButtonText: "Delete"
+    });
+    
+    if (confirmed) {
+      await this.deleteItem();
+    }
+  }
+}
+```
+
+### Table Data Source
+
+```typescript
+import { TableDataSource } from "@bitwarden/components";
+
+export class MyTableComponent {
+  dataSource = new TableDataSource<MyData>();
+  
+  ngOnInit() {
+    this.dataSource.data = this.loadData();
+  }
+}
+```
+
+## Related Libraries
+
+- [Platform Library](/libs/platform) - Platform abstractions and services
+- [State Management](/libs/state-management) - State provider framework
+- `@bitwarden/auth` - Authentication components
+- `@bitwarden/vault` - Vault UI components
+
+## Source Code
+
+- **Components Library:** `libs/components/src/`
+- **Storybook Config:** `.storybook/`
+- **Component Stories:** `libs/components/src/*/*.stories.ts`
+- **Documentation:** `libs/components/src/*/*.mdx`
+
+## Additional Resources
+
+- [Storybook Documentation](https://storybook.js.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Angular Components](https://angular.io/guide/component-overview)
+- [WCAG Accessibility Guidelines](https://www.w3.org/WAI/WCAG21/quickref/)

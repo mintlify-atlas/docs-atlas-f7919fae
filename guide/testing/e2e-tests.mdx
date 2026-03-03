@@ -1,0 +1,551 @@
+---
+title: E2E Testing
+description: End-to-end testing approach with Storybook
+---
+
+## Overview
+
+The Bitwarden clients repository uses **Storybook** as the primary tool for component-level E2E testing and visual regression testing. Storybook provides an isolated environment for developing and testing UI components.
+
+## Storybook Configuration
+
+### Available Commands
+
+```bash
+# Start Storybook development server
+npm run storybook
+
+# Build static Storybook for deployment
+npm run build-storybook
+
+# Build with webpack stats (for CI)
+npm run build-storybook:ci
+
+# Run Storybook tests
+npm run test-stories
+
+# Watch mode for story tests
+npm run test-stories:watch
+```
+
+### Storybook Dependencies
+
+From `package.json`:
+
+```json
+{
+  "devDependencies": {
+    "@storybook/addon-a11y": "9.1.16",
+    "@storybook/addon-designs": "9.0.0-next.3",
+    "@storybook/addon-docs": "9.1.16",
+    "@storybook/addon-links": "9.1.16",
+    "@storybook/addon-themes": "9.1.16",
+    "@storybook/angular": "9.1.16",
+    "@storybook/test-runner": "0.22.0",
+    "@storybook/web-components-vite": "9.1.16",
+    "storybook": "9.1.19"
+  }
+}
+```
+
+## Storybook Features
+
+### 1. Component Development
+
+Storybook provides an isolated environment to develop components:
+
+- **Live preview** of component variations
+- **Interactive controls** for component props
+- **Documentation** alongside components
+- **Accessibility testing** via a11y addon
+
+### 2. Visual Regression Testing
+
+Using Chromatic for visual testing:
+
+```bash
+# Run Chromatic visual tests (if configured)
+npx chromatic
+```
+
+The repository includes `chromatic` as a dependency for automated visual regression testing.
+
+### 3. Accessibility Testing
+
+The `@storybook/addon-a11y` addon automatically checks components for accessibility issues:
+
+- WCAG compliance violations
+- Color contrast issues
+- ARIA attribute problems
+- Keyboard navigation issues
+
+## Writing Stories
+
+While the source files weren't provided, typical Storybook stories in Angular projects follow this pattern:
+
+### Basic Component Story
+
+```typescript
+import { Meta, StoryObj } from '@storybook/angular';
+import { ButtonComponent } from './button.component';
+
+const meta: Meta<ButtonComponent> = {
+  title: 'Components/Button',
+  component: ButtonComponent,
+  tags: ['autodocs'],
+  argTypes: {
+    variant: {
+      control: 'select',
+      options: ['primary', 'secondary', 'danger'],
+    },
+    disabled: {
+      control: 'boolean',
+    },
+  },
+};
+
+export default meta;
+type Story = StoryObj<ButtonComponent>;
+
+export const Primary: Story = {
+  args: {
+    variant: 'primary',
+    label: 'Click me',
+    disabled: false,
+  },
+};
+
+export const Secondary: Story = {
+  args: {
+    variant: 'secondary',
+    label: 'Click me',
+  },
+};
+
+export const Disabled: Story = {
+  args: {
+    variant: 'primary',
+    label: 'Disabled',
+    disabled: true,
+  },
+};
+```
+
+### Interactive Story with Actions
+
+```typescript
+import { action } from '@storybook/addon-actions';
+
+export const Interactive: Story = {
+  args: {
+    onClick: action('clicked'),
+    onHover: action('hovered'),
+  },
+  render: (args) => ({
+    props: args,
+    template: `
+      <app-button 
+        [variant]="variant"
+        (click)="onClick($event)"
+        (mouseenter)="onHover($event)">
+        {{ label }}
+      </app-button>
+    `,
+  }),
+};
+```
+
+### Story with Multiple Components
+
+```typescript
+import { moduleMetadata } from '@storybook/angular';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+
+const meta: Meta = {
+  title: 'Forms/Login',
+  decorators: [
+    moduleMetadata({
+      imports: [CommonModule, ReactiveFormsModule],
+      providers: [FormBuilder],
+    }),
+  ],
+};
+
+export const LoginForm: Story = {
+  render: () => ({
+    template: `
+      <form [formGroup]="loginForm">
+        <app-input formControlName="email" label="Email" />
+        <app-input formControlName="password" label="Password" type="password" />
+        <app-button type="submit">Login</app-button>
+      </form>
+    `,
+  }),
+};
+```
+
+## Test Runner
+
+The Storybook test runner uses `@storybook/test-runner` to run automated tests:
+
+### Basic Test Configuration
+
+Create a `.storybook/test-runner.ts` file:
+
+```typescript
+import type { TestRunnerConfig } from '@storybook/test-runner';
+import { checkA11y, injectAxe } from 'axe-playwright';
+
+const config: TestRunnerConfig = {
+  async preRender(page) {
+    await injectAxe(page);
+  },
+  async postRender(page) {
+    // Run accessibility tests on each story
+    await checkA11y(page, '#storybook-root', {
+      detailedReport: true,
+      detailedReportOptions: {
+        html: true,
+      },
+    });
+  },
+};
+
+export default config;
+```
+
+### Running Tests
+
+```bash
+# Make sure Storybook is running
+npm run storybook
+
+# In another terminal, run tests
+npm run test-stories
+
+# Or use the test URL directly
+npm run test-stories -- --url http://localhost:6006
+```
+
+## Testing Strategies
+
+### 1. Visual Testing
+
+Capture visual snapshots of components in different states:
+
+```typescript
+export const AllStates: Story = {
+  render: () => ({
+    template: `
+      <div style="display: grid; gap: 1rem;">
+        <app-button variant="primary">Primary</app-button>
+        <app-button variant="primary" disabled>Primary Disabled</app-button>
+        <app-button variant="secondary">Secondary</app-button>
+        <app-button variant="secondary" disabled>Secondary Disabled</app-button>
+        <app-button variant="danger">Danger</app-button>
+        <app-button variant="danger" disabled>Danger Disabled</app-button>
+      </div>
+    `,
+  }),
+};
+```
+
+### 2. Interaction Testing
+
+Test user interactions with the `@storybook/test` library:
+
+```typescript
+import { expect } from '@storybook/jest';
+import { userEvent, within } from '@storybook/testing-library';
+
+export const FilledForm: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Find form elements
+    const emailInput = canvas.getByLabelText('Email');
+    const passwordInput = canvas.getByLabelText('Password');
+    const submitButton = canvas.getByRole('button', { name: /login/i });
+    
+    // Simulate user input
+    await userEvent.type(emailInput, 'user@example.com');
+    await userEvent.type(passwordInput, 'password123');
+    
+    // Verify form state
+    await expect(emailInput).toHaveValue('user@example.com');
+    await expect(passwordInput).toHaveValue('password123');
+    
+    // Submit form
+    await userEvent.click(submitButton);
+  },
+};
+```
+
+### 3. Responsive Testing
+
+Test components at different viewport sizes:
+
+```typescript
+import { MINIMAL_VIEWPORTS } from '@storybook/addon-viewport';
+
+const meta: Meta = {
+  title: 'Components/ResponsiveCard',
+  parameters: {
+    viewport: {
+      viewports: MINIMAL_VIEWPORTS,
+    },
+  },
+};
+
+export const Mobile: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'mobile1',
+    },
+  },
+};
+
+export const Tablet: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'tablet',
+    },
+  },
+};
+
+export const Desktop: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'desktop',
+    },
+  },
+};
+```
+
+### 4. Theme Testing
+
+Test components with different themes using `@storybook/addon-themes`:
+
+```typescript
+import { withThemeByClassName } from '@storybook/addon-themes';
+
+const meta: Meta = {
+  decorators: [
+    withThemeByClassName({
+      themes: {
+        light: 'theme-light',
+        dark: 'theme-dark',
+      },
+      defaultTheme: 'light',
+    }),
+  ],
+};
+```
+
+## Accessibility Testing
+
+### Using the A11y Addon
+
+The `@storybook/addon-a11y` automatically runs accessibility checks:
+
+```typescript
+const meta: Meta = {
+  title: 'Components/AccessibleButton',
+  parameters: {
+    a11y: {
+      // Configure accessibility rules
+      config: {
+        rules: [
+          {
+            id: 'color-contrast',
+            enabled: true,
+          },
+        ],
+      },
+      // Optional: specify element to check
+      element: '#root',
+    },
+  },
+};
+```
+
+### Programmatic A11y Testing
+
+Using `axe-playwright` in test runner:
+
+```typescript
+import { checkA11y } from 'axe-playwright';
+
+export const Accessible: Story = {
+  play: async ({ canvasElement }) => {
+    // Component interactions
+    const canvas = within(canvasElement);
+    
+    // Check accessibility
+    await checkA11y(canvasElement, {
+      rules: {
+        'color-contrast': { enabled: true },
+        'label': { enabled: true },
+      },
+    });
+  },
+};
+```
+
+## Component Testing Workflow
+
+### 1. Develop Component
+
+```bash
+# Start Storybook
+npm run storybook
+```
+
+### 2. Create Stories
+
+Create a `.stories.ts` file alongside your component:
+
+```
+components/
+├── button/
+│   ├── button.component.ts
+│   ├── button.component.spec.ts  # Unit tests
+│   └── button.stories.ts         # Storybook stories
+```
+
+### 3. Write Interaction Tests
+
+Add `play` functions to test user interactions.
+
+### 4. Run Tests
+
+```bash
+# Run all story tests
+npm run test-stories
+```
+
+### 5. Visual Review
+
+Use Chromatic or manual review to catch visual regressions.
+
+## Best Practices
+
+### 1. Story Organization
+
+- Use clear story names: `Primary`, `Disabled`, `WithError`
+- Group related stories under the same title
+- Use `autodocs` tag to generate documentation
+
+### 2. Component Variations
+
+Create stories for all important states:
+
+```typescript
+export const Default: Story = { args: {} };
+export const Loading: Story = { args: { loading: true } };
+export const Error: Story = { args: { error: 'Something went wrong' } };
+export const Empty: Story = { args: { items: [] } };
+export const WithData: Story = { args: { items: mockItems } };
+```
+
+### 3. Interaction Testing
+
+- Test happy paths
+- Test error states
+- Test form validation
+- Test async operations
+
+### 4. Accessibility
+
+- Always enable a11y addon
+- Test keyboard navigation
+- Verify ARIA labels
+- Check color contrast
+
+## CI/CD Integration
+
+### GitHub Actions Example
+
+```yaml
+name: Storybook Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build Storybook
+        run: npm run build-storybook:ci
+      
+      - name: Run Storybook tests
+        run: npm run test-stories
+      
+      - name: Run Chromatic
+        uses: chromaui/action@v1
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          buildScriptName: build-storybook
+```
+
+## Troubleshooting
+
+### Storybook Won't Start
+
+1. Clear cache: `rm -rf node_modules/.cache/storybook`
+2. Reinstall dependencies: `npm ci`
+3. Check for port conflicts (default: 6006)
+
+### Test Runner Failing
+
+1. Ensure Storybook is running: `npm run storybook`
+2. Check the test URL: `http://localhost:6006`
+3. Increase timeout for slow tests
+
+### Accessibility Violations
+
+1. Review the a11y panel in Storybook UI
+2. Fix violations in component code
+3. Re-run tests to verify fixes
+
+## Alternative E2E Approaches
+
+While Storybook is the primary E2E tool, other approaches include:
+
+### Browser Extension Testing
+
+For the browser extension (`apps/browser`):
+
+- Manual testing in browser environments
+- Extension-specific test utilities
+- Browser automation with Puppeteer/Playwright (if configured)
+
+### Desktop App Testing
+
+For Electron app (`apps/desktop`):
+
+- Spectron or Playwright Electron (if configured)
+- Manual testing in development mode
+
+### CLI Testing
+
+For CLI app (`apps/cli`):
+
+- Integration tests with real commands
+- Mock API responses for offline testing
+
+## Resources
+
+- [Storybook Documentation](https://storybook.js.org/docs)
+- [Storybook Test Runner](https://storybook.js.org/docs/angular/writing-tests/test-runner)
+- [Chromatic Visual Testing](https://www.chromatic.com/docs)
+- [axe-playwright](https://github.com/abhinaba-ghosh/axe-playwright)

@@ -1,0 +1,453 @@
+---
+title: Login Strategy Service
+description: API reference for login strategies and authentication methods
+---
+
+## Overview
+
+The Login Strategy Service manages different authentication methods and login flows. It provides a unified interface for authenticating users through various strategies including password, SSO, WebAuthn, API keys, and auth requests.
+
+## LoginStrategyServiceAbstraction
+
+Core service for managing authentication strategies and login flows.
+
+### Properties
+
+#### currentAuthType$
+
+```typescript
+abstract currentAuthType$: Observable<AuthenticationType | null>
+```
+
+Observable that emits the current authentication strategy being used. Emits `null` if the session has timed out.
+
+#### authenticationSessionTimeout$
+
+```typescript
+abstract get authenticationSessionTimeout$(): Observable<boolean>
+```
+
+Observable that emits `true` when the authentication session has expired.
+
+### Methods
+
+#### getEmail()
+
+```typescript
+abstract getEmail(): Promise<string | null>
+```
+
+Returns the email address if the login strategy uses it, otherwise returns `null`.
+
+**Returns:** `Promise<string | null>` - Email address or null
+
+---
+
+#### getMasterPasswordHash()
+
+```typescript
+abstract getMasterPasswordHash(): Promise<string | null>
+```
+
+Returns the master password hash if the user is logging in with a master password, otherwise returns `null`.
+
+**Returns:** `Promise<string | null>` - Master password hash or null
+
+---
+
+#### getSsoEmail2FaSessionToken()
+
+```typescript
+abstract getSsoEmail2FaSessionToken(): Promise<string | null>
+```
+
+Returns the SSO email 2FA session token if the user is logging in with SSO, otherwise returns `null`.
+
+**Returns:** `Promise<string | null>` - SSO email 2FA session token or null
+
+**See also:** `SsoLoginStrategyData.ssoEmail2FaSessionToken`
+
+---
+
+#### getAccessCode()
+
+```typescript
+abstract getAccessCode(): Promise<string | null>
+```
+
+Returns the access code if the user is logging in with an Auth Request, otherwise returns `null`.
+
+**Returns:** `Promise<string | null>` - Access code or null
+
+---
+
+#### getAuthRequestId()
+
+```typescript
+abstract getAuthRequestId(): Promise<string | null>
+```
+
+Returns the auth request ID if the user is logging in with an Auth Request, otherwise returns `null`.
+
+**Returns:** `Promise<string | null>` - Auth request ID or null
+
+---
+
+#### logIn()
+
+```typescript
+abstract logIn(
+  credentials:
+    | UserApiLoginCredentials
+    | PasswordLoginCredentials
+    | SsoLoginCredentials
+    | AuthRequestLoginCredentials
+    | WebAuthnLoginCredentials
+): Promise<AuthResult>
+```
+
+Sends a token request to the server using the provided credentials.
+
+**Parameters:**
+- `credentials` - Login credentials for the chosen authentication method
+
+**Returns:** `Promise<AuthResult>` - Authentication result
+
+---
+
+#### logInTwoFactor()
+
+```typescript
+abstract logInTwoFactor(twoFactor: TokenTwoFactorRequest): Promise<AuthResult>
+```
+
+Sends a token request to the server with the provided two-factor token. This uses data stored from `logIn()`, so that must be called first.
+
+**Parameters:**
+- `twoFactor` - Two-factor authentication request
+
+**Returns:** `Promise<AuthResult>` - Authentication result
+
+**Throws:** Error if no session data is found
+
+---
+
+#### makePasswordPreLoginMasterKey()
+
+```typescript
+abstract makePasswordPreLoginMasterKey(
+  masterPassword: string,
+  email: string
+): Promise<MasterKey>
+```
+
+Creates a master key from the provided master password and email.
+
+**Parameters:**
+- `masterPassword` - User's master password
+- `email` - User's email address
+
+**Returns:** `Promise<MasterKey>` - Generated master key
+
+---
+
+#### getPasswordPrelogin()
+
+```typescript
+abstract getPasswordPrelogin(email: string): Promise<void>
+```
+
+Prefetches and caches the KDF configuration for the given email. No-op if already in-flight or cached.
+
+**Parameters:**
+- `email` - User's email address
+
+**Returns:** `Promise<void>`
+
+---
+
+#### logInNewDeviceVerification()
+
+```typescript
+abstract logInNewDeviceVerification(deviceVerificationOtp: string): Promise<AuthResult>
+```
+
+Sends a token request to the server with the provided device verification OTP.
+
+**Parameters:**
+- `deviceVerificationOtp` - Device verification one-time password
+
+**Returns:** `Promise<AuthResult>` - Authentication result
+
+---
+
+## Login Credential Types
+
+### PasswordLoginCredentials
+
+```typescript
+class PasswordLoginCredentials {
+  readonly type = AuthenticationType.Password;
+
+  constructor(
+    public email: string,
+    public masterPassword: string,
+    public twoFactor?: TokenTwoFactorRequest,
+    public masterPasswordPoliciesFromOrgInvite?: MasterPasswordPolicyOptions
+  )
+}
+```
+
+Credentials for password-based authentication.
+
+**Properties:**
+- `email` - User's email address
+- `masterPassword` - User's master password
+- `twoFactor` - Optional two-factor authentication token
+- `masterPasswordPoliciesFromOrgInvite` - Optional master password policies from organization invite
+
+---
+
+### SsoLoginCredentials
+
+```typescript
+class SsoLoginCredentials {
+  readonly type = AuthenticationType.Sso;
+
+  constructor(
+    public code: string,
+    public codeVerifier: string,
+    public redirectUrl: string,
+    public orgId: string,
+    public email?: string,
+    public twoFactor?: TokenTwoFactorRequest
+  )
+}
+```
+
+Credentials for SSO-based authentication.
+
+**Properties:**
+- `code` - OAuth authorization code
+- `codeVerifier` - PKCE code verifier
+- `redirectUrl` - OAuth redirect URL
+- `orgId` - Organization ID
+- `email` - Optional email address (used for 2FA token lookup)
+- `twoFactor` - Optional two-factor authentication token
+
+---
+
+### UserApiLoginCredentials
+
+```typescript
+class UserApiLoginCredentials {
+  readonly type = AuthenticationType.UserApiKey;
+
+  constructor(
+    public clientId: string,
+    public clientSecret: string
+  )
+}
+```
+
+Credentials for API key-based authentication.
+
+**Properties:**
+- `clientId` - API key client ID
+- `clientSecret` - API key client secret
+
+---
+
+### AuthRequestLoginCredentials
+
+```typescript
+class AuthRequestLoginCredentials {
+  readonly type = AuthenticationType.AuthRequest;
+
+  constructor(
+    public email: string,
+    public accessCode: string,
+    public authRequestId: string,
+    public decryptedUserKey: UserKey | null,
+    public twoFactor?: TokenTwoFactorRequest
+  )
+}
+```
+
+Credentials for passwordless authentication via auth request.
+
+**Properties:**
+- `email` - User's email address
+- `accessCode` - Access code from auth request
+- `authRequestId` - Auth request ID
+- `decryptedUserKey` - Decrypted user key (if available)
+- `twoFactor` - Optional two-factor authentication token
+
+---
+
+### WebAuthnLoginCredentials
+
+```typescript
+class WebAuthnLoginCredentials {
+  readonly type = AuthenticationType.WebAuthn;
+
+  constructor(
+    public token: string,
+    public deviceResponse: WebAuthnLoginAssertionResponseRequest,
+    public prfKey?: SymmetricCryptoKey
+  )
+}
+```
+
+Credentials for WebAuthn (passkey) authentication.
+
+**Properties:**
+- `token` - Authentication token
+- `deviceResponse` - WebAuthn assertion response from the browser
+- `prfKey` - Optional PRF key for key derivation
+
+---
+
+## Login Strategy Base Class
+
+### LoginStrategy
+
+Abstract base class for all login strategies. Implements common login flow logic.
+
+#### Methods
+
+##### logIn()
+
+```typescript
+abstract logIn(
+  credentials:
+    | UserApiLoginCredentials
+    | PasswordLoginCredentials
+    | SsoLoginCredentials
+    | AuthRequestLoginCredentials
+    | WebAuthnLoginCredentials
+): Promise<AuthResult>
+```
+
+Executes the login flow for the specific strategy.
+
+---
+
+##### logInTwoFactor()
+
+```typescript
+async logInTwoFactor(twoFactor: TokenTwoFactorRequest): Promise<AuthResult>
+```
+
+Handles two-factor authentication for the login flow.
+
+**Parameters:**
+- `twoFactor` - Two-factor authentication request
+
+**Returns:** `Promise<AuthResult>` - Authentication result with master password if available
+
+**Throws:** Error if token request is undefined
+
+---
+
+## Example Usage
+
+### Password Login
+
+```typescript
+import { LoginStrategyServiceAbstraction } from '@bitwarden/auth';
+import { PasswordLoginCredentials } from '@bitwarden/auth';
+
+// Inject the service
+const loginService: LoginStrategyServiceAbstraction;
+
+// Prefetch KDF configuration
+await loginService.getPasswordPrelogin('user@example.com');
+
+// Create credentials
+const credentials = new PasswordLoginCredentials(
+  'user@example.com',
+  'masterPassword123'
+);
+
+// Attempt login
+const result = await loginService.logIn(credentials);
+
+if (result.twoFactorProviders) {
+  // Handle 2FA requirement
+  const twoFactorToken = new TokenTwoFactorRequest(
+    TwoFactorProviderType.Authenticator,
+    '123456',
+    false
+  );
+  const finalResult = await loginService.logInTwoFactor(twoFactorToken);
+}
+```
+
+### SSO Login
+
+```typescript
+import { SsoLoginCredentials } from '@bitwarden/auth';
+
+// Create SSO credentials from OAuth callback
+const credentials = new SsoLoginCredentials(
+  authorizationCode,
+  codeVerifier,
+  redirectUri,
+  organizationId,
+  'user@example.com'
+);
+
+// Attempt login
+const result = await loginService.logIn(credentials);
+```
+
+### API Key Login
+
+```typescript
+import { UserApiLoginCredentials } from '@bitwarden/auth';
+
+// Create API key credentials
+const credentials = new UserApiLoginCredentials(
+  'client_id_here',
+  'client_secret_here'
+);
+
+// Attempt login
+const result = await loginService.logIn(credentials);
+```
+
+---
+
+## Related Types
+
+### AuthResult
+
+Result object returned from login operations.
+
+```typescript
+class AuthResult {
+  userId?: UserId;
+  masterPassword?: string;
+  twoFactorProviders?: Map<TwoFactorProviderType, any>;
+  email?: string;
+  requiresDeviceVerification?: boolean;
+  requiresEncryptionKeyMigration?: boolean;
+  ssoEmail2FaSessionToken?: string;
+  ssoOrganizationIdentifier?: string;
+}
+```
+
+### AuthenticationType
+
+Enum defining available authentication types.
+
+```typescript
+enum AuthenticationType {
+  Password,
+  Sso,
+  UserApiKey,
+  AuthRequest,
+  WebAuthn
+}
+```

@@ -1,0 +1,441 @@
+---
+title: Logging Service
+description: Logging service for application diagnostics and performance tracking
+---
+
+## Overview
+
+The Logging Service provides a unified interface for logging messages, errors, and performance metrics throughout the application. It supports multiple log levels and includes performance measurement capabilities.
+
+## LogService
+
+The abstract base class that all logging implementations must extend.
+
+### Interface
+
+```typescript
+abstract class LogService {
+  abstract debug(message?: any, ...optionalParams: any[]): void;
+  abstract info(message?: any, ...optionalParams: any[]): void;
+  abstract warning(message?: any, ...optionalParams: any[]): void;
+  abstract error(message?: any, ...optionalParams: any[]): void;
+  abstract write(level: LogLevel, message?: any, ...optionalParams: any[]): void;
+  
+  abstract measure(
+    start: DOMHighResTimeStamp,
+    trackGroup: string,
+    track: string,
+    measureName: string,
+    properties?: [string, any][],
+  ): PerformanceMeasure;
+  
+  abstract mark(name: string): PerformanceMark;
+}
+```
+
+### Methods
+
+#### `debug()`
+
+```typescript
+abstract debug(message?: any, ...optionalParams: any[]): void;
+```
+
+Logs a debug-level message. Typically only shown in development environments.
+
+**Parameters:**
+- `message` (any, optional): The primary message to log
+- `optionalParams` (...any[]): Additional parameters to include in the log output
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+logService.debug('User action:', { action: 'click', target: 'button' });
+```
+
+#### `info()`
+
+```typescript
+abstract info(message?: any, ...optionalParams: any[]): void;
+```
+
+Logs an informational message.
+
+**Parameters:**
+- `message` (any, optional): The primary message to log
+- `optionalParams` (...any[]): Additional parameters to include in the log output
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+logService.info('Sync completed successfully', { itemCount: 42 });
+```
+
+#### `warning()`
+
+```typescript
+abstract warning(message?: any, ...optionalParams: any[]): void;
+```
+
+Logs a warning message for non-critical issues.
+
+**Parameters:**
+- `message` (any, optional): The primary message to log
+- `optionalParams` (...any[]): Additional parameters to include in the log output
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+logService.warning('API rate limit approaching', { remaining: 10 });
+```
+
+#### `error()`
+
+```typescript
+abstract error(message?: any, ...optionalParams: any[]): void;
+```
+
+Logs an error message for critical issues and exceptions.
+
+**Parameters:**
+- `message` (any, optional): The primary message to log
+- `optionalParams` (...any[]): Additional parameters to include in the log output
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+try {
+  await riskyOperation();
+} catch (err) {
+  logService.error('Operation failed', err);
+}
+```
+
+#### `write()`
+
+```typescript
+abstract write(level: LogLevel, message?: any, ...optionalParams: any[]): void;
+```
+
+Writes a log message at the specified log level.
+
+**Parameters:**
+- `level` (LogLevel): The log level for this message
+- `message` (any, optional): The primary message to log
+- `optionalParams` (...any[]): Additional parameters to include in the log output
+
+**Returns:** `void`
+
+**Example:**
+```typescript
+logService.write(LogLevel.Info, 'Custom log message', { context: 'auth' });
+```
+
+#### `measure()`
+
+```typescript
+abstract measure(
+  start: DOMHighResTimeStamp,
+  trackGroup: string,
+  track: string,
+  measureName: string,
+  properties?: [string, any][],
+): PerformanceMeasure;
+```
+
+Helper wrapper around `performance.measure` to log a performance measurement.
+
+**Parameters:**
+- `start` (DOMHighResTimeStamp): Start time of the measurement
+- `trackGroup` (string): A track-group for the measurement (generally the team owning the domain)
+- `track` (string): A track for the measurement (generally the class name)
+- `measureName` (string): A descriptive name for the measurement
+- `properties` ([string, any][], optional): Additional properties to include
+
+**Returns:** `PerformanceMeasure` - The performance measurement object
+
+**Example:**
+```typescript
+const start = performance.now();
+await expensiveOperation();
+logService.measure(
+  start,
+  'vault-team',
+  'VaultService',
+  'decryptItems',
+  [['itemCount', 100]]
+);
+```
+
+#### `mark()`
+
+```typescript
+abstract mark(name: string): PerformanceMark;
+```
+
+Helper wrapper around `performance.mark` to log a performance mark.
+
+**Parameters:**
+- `name` (string): Name of the mark to create
+
+**Returns:** `PerformanceMark` - The performance mark object
+
+**Example:**
+```typescript
+logService.mark('vault-unlock-start');
+await unlockVault();
+logService.mark('vault-unlock-complete');
+```
+
+## ConsoleLogService
+
+A concrete implementation of LogService that outputs to the browser console.
+
+### Interface
+
+```typescript
+class ConsoleLogService implements LogService {
+  constructor(
+    isDev: boolean,
+    filter?: ((level: LogLevel) => boolean) | null
+  );
+  
+  debug(message?: any, ...optionalParams: any[]): void;
+  info(message?: any, ...optionalParams: any[]): void;
+  warning(message?: any, ...optionalParams: any[]): void;
+  error(message?: any, ...optionalParams: any[]): void;
+  write(level: LogLevel, message?: any, ...optionalParams: any[]): void;
+  measure(
+    start: DOMHighResTimeStamp,
+    trackGroup: string,
+    track: string,
+    name?: string,
+    properties?: [string, any][],
+  ): PerformanceMeasure;
+  mark(name: string): PerformanceMark;
+}
+```
+
+### Constructor
+
+```typescript
+constructor(
+  isDev: boolean,
+  filter?: ((level: LogLevel) => boolean) | null
+)
+```
+
+**Parameters:**
+- `isDev` (boolean): Whether the application is running in development mode (enables debug logs)
+- `filter` ((level: LogLevel) => boolean | null, optional): Optional filter function to suppress certain log levels
+
+**Example:**
+```typescript
+// Log everything in development
+const devLogger = new ConsoleLogService(true);
+
+// Production logger with filter
+const prodLogger = new ConsoleLogService(
+  false,
+  (level) => level === LogLevel.Debug // Suppress debug logs
+);
+```
+
+### Behavior
+
+- **Debug logs**: Only output when `isDev` is `true`
+- **Info logs**: Output using `console.log`
+- **Warning logs**: Output using `console.warn`
+- **Error logs**: Output using `console.error`
+- **Performance measurements**: Automatically logged with duration information
+- **Performance marks**: Automatically logged with timestamp
+
+## Types
+
+### LogLevel
+
+```typescript
+enum LogLevel {
+  Debug,
+  Info,
+  Warning,
+  Error,
+}
+```
+
+Defines the severity level of log messages.
+
+- `Debug` (0): Detailed diagnostic information for development
+- `Info` (1): General informational messages
+- `Warning` (2): Warning messages for non-critical issues
+- `Error` (3): Error messages for critical issues
+
+## Usage Examples
+
+### Basic Logging
+
+```typescript
+const logger = new ConsoleLogService(isDevelopment);
+
+// Different log levels
+logger.debug('Detailed debugging info', { variable: value });
+logger.info('Application started successfully');
+logger.warning('Deprecated API used', { api: 'oldMethod' });
+logger.error('Failed to load configuration', error);
+```
+
+### Conditional Logging
+
+```typescript
+// Log based on level
+if (severity === 'high') {
+  logger.error('Critical issue detected');
+} else {
+  logger.warning('Minor issue detected');
+}
+
+// Using write() with dynamic level
+const level = isProduction ? LogLevel.Error : LogLevel.Debug;
+logger.write(level, 'Message', context);
+```
+
+### Performance Tracking
+
+```typescript
+class VaultService {
+  constructor(private logger: LogService) {}
+  
+  async syncVault() {
+    // Mark the start of an operation
+    this.logger.mark('sync-start');
+    
+    const start = performance.now();
+    
+    try {
+      const items = await this.fetchItems();
+      
+      // Measure the operation duration
+      this.logger.measure(
+        start,
+        'vault-team',
+        'VaultService',
+        'syncVault',
+        [
+          ['itemCount', items.length],
+          ['success', true]
+        ]
+      );
+      
+      this.logger.mark('sync-complete');
+    } catch (error) {
+      this.logger.error('Sync failed', error);
+      throw error;
+    }
+  }
+}
+```
+
+### Custom Log Filtering
+
+```typescript
+// Filter out debug and info logs in production
+const productionFilter = (level: LogLevel) => {
+  return level === LogLevel.Debug || level === LogLevel.Info;
+};
+
+const logger = new ConsoleLogService(false, productionFilter);
+
+logger.debug('This will be suppressed');
+logger.info('This will also be suppressed');
+logger.warning('This will be logged');
+logger.error('This will be logged');
+```
+
+### Error Handling with Context
+
+```typescript
+async function processData(data: any) {
+  try {
+    const result = await riskyOperation(data);
+    logger.info('Data processed successfully', { 
+      recordCount: result.length 
+    });
+    return result;
+  } catch (error) {
+    logger.error('Data processing failed', {
+      error,
+      dataSize: data.length,
+      timestamp: new Date().toISOString()
+    });
+    throw error;
+  }
+}
+```
+
+### Performance Benchmarking
+
+```typescript
+class PerformanceBenchmark {
+  constructor(private logger: LogService) {}
+  
+  async benchmarkOperation(name: string, operation: () => Promise<void>) {
+    const markStart = `${name}-start`;
+    const markEnd = `${name}-end`;
+    
+    this.logger.mark(markStart);
+    const start = performance.now();
+    
+    await operation();
+    
+    this.logger.mark(markEnd);
+    const measure = this.logger.measure(
+      start,
+      'performance',
+      'Benchmark',
+      name
+    );
+    
+    this.logger.info(`${name} completed in ${measure.duration}ms`);
+  }
+}
+
+// Usage
+const benchmark = new PerformanceBenchmark(logger);
+await benchmark.benchmarkOperation('vault-decrypt', async () => {
+  await decryptVault();
+});
+```
+
+## Best Practices
+
+### Log Level Selection
+
+- Use `debug()` for detailed diagnostic information needed during development
+- Use `info()` for important runtime events and state changes
+- Use `warning()` for recoverable issues that may need attention
+- Use `error()` for failures and exceptions that impact functionality
+
+### Structured Logging
+
+```typescript
+// Good: Include context objects
+logger.info('User authenticated', { 
+  userId, 
+  method: 'password',
+  timestamp: Date.now() 
+});
+
+// Avoid: String concatenation
+logger.info('User ' + userId + ' authenticated via password');
+```
+
+### Performance Measurement
+
+- Use consistent `trackGroup` values for team ownership
+- Use class names for `track` to organize measurements
+- Include relevant properties to add context to measurements
+- Mark significant milestones in long-running operations

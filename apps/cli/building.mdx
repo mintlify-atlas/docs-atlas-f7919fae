@@ -1,0 +1,343 @@
+---
+title: Building the CLI
+description: Build commands, packaging, and binary distribution for the Bitwarden CLI
+---
+
+The Bitwarden CLI can be built from source for development or custom distribution. The build system supports both OSS (open-source) and commercial (Bit) builds.
+
+## Prerequisites
+
+- Node.js runtime (latest LTS version recommended)
+- npm package manager
+- [pkg](https://github.com/vercel/pkg) for creating native executables
+
+## Development Builds
+
+### OSS Build (Open Source)
+
+Build the open-source version of the CLI:
+
+```bash
+# Standard build
+npm run build:oss
+
+# Production build (optimized)
+npm run build:oss:prod
+
+# Watch mode (rebuilds on file changes)
+npm run build:oss:watch
+```
+
+The output is placed in `build/bw.js`.
+
+### Debug Mode
+
+Run with Node.js inspector for debugging:
+
+```bash
+# Build and debug
+npm run build:oss:debug
+
+# Or debug existing build
+npm run debug
+```
+
+Attach a debugger to the running process on the default inspector port.
+
+### Commercial Build
+
+Build the commercial version (requires Bitwarden license files):
+
+```bash
+# Standard build
+npm run build:bit
+
+# Production build
+npm run build:bit:prod
+
+# Watch mode
+npm run build:bit:watch
+```
+
+## Binary Distribution
+
+### Platform-Specific Packaging
+
+The CLI uses [pkg](https://github.com/vercel/pkg) to create standalone native executables:
+
+<Tabs>
+  <Tab title="Windows (x64)">
+    ```bash
+    # OSS build
+    npm run dist:oss:win
+    
+    # Commercial build
+    npm run dist:bit:win
+    ```
+    
+    Output: `dist/oss/windows/bw.exe` or `dist/bit/windows/bw.exe`
+  </Tab>
+  
+  <Tab title="macOS (Intel)">
+    ```bash
+    # OSS build
+    npm run dist:oss:mac
+    
+    # Commercial build
+    npm run dist:bit:mac
+    ```
+    
+    Output: `dist/oss/macos/bw` or `dist/bit/macos/bw`
+  </Tab>
+  
+  <Tab title="macOS (ARM64)">
+    ```bash
+    # OSS build
+    npm run dist:oss:mac-arm64
+    
+    # Commercial build
+    npm run dist:bit:mac-arm64
+    ```
+    
+    Output: `dist/oss/macos-arm64/bw` or `dist/bit/macos-arm64/bw`
+  </Tab>
+  
+  <Tab title="Linux (x64)">
+    ```bash
+    # OSS build
+    npm run dist:oss:lin
+    
+    # Commercial build
+    npm run dist:bit:lin
+    ```
+    
+    Output: `dist/oss/linux/bw` or `dist/bit/linux/bw`
+  </Tab>
+  
+  <Tab title="Linux (ARM64)">
+    ```bash
+    # OSS build
+    npm run dist:oss:lin-arm64
+    
+    # Commercial build
+    npm run dist:bit:lin-arm64
+    ```
+    
+    Output: `dist/oss/linux-arm64/bw` or `dist/bit/linux-arm64/bw`
+  </Tab>
+</Tabs>
+
+### Packaging Process
+
+Each distribution command follows this workflow:
+
+1. **Build**: Compile TypeScript to JavaScript with webpack
+2. **Clean**: Remove previous distribution files
+3. **Package**: Create native executable with pkg
+
+For example, `npm run dist:oss:win` executes:
+
+```bash
+npm run build:oss:prod  # Build with production optimizations
+npm run clean            # Remove old dist files
+npm run package:oss:win  # Create Windows executable
+```
+
+### Direct Packaging
+
+To package an existing build without rebuilding:
+
+```bash
+# Windows
+npm run package:oss:win
+
+# macOS (Intel)
+npm run package:oss:mac
+
+# macOS (ARM64)
+npm run package:oss:mac-arm64
+
+# Linux (x64)
+npm run package:oss:lin
+
+# Linux (ARM64)
+npm run package:oss:lin-arm64
+```
+
+## Package Configuration
+
+The `package.json` defines the pkg configuration:
+
+```json
+{
+  "bin": {
+    "bw": "build/bw.js"
+  },
+  "pkg": {
+    "assets": [
+      "./build/**/*"
+    ]
+  }
+}
+```
+
+### Pkg Targets
+
+The build system targets these platforms:
+
+- `win-x64`: Windows x64
+- `macos-x64`: macOS Intel
+- `macos-arm64`: macOS Apple Silicon
+- `linux-x64`: Linux x64
+- `linux-arm64`: Linux ARM64
+
+All bundled assets from `./build/**/*` are included in the executable.
+
+## Build System
+
+### Webpack Configuration
+
+Builds use webpack for bundling:
+
+- **OSS**: Default webpack configuration
+- **Commercial**: Custom configuration at `../../bitwarden_license/bit-cli/webpack.config.js`
+
+### Production Mode
+
+Production builds set `NODE_ENV=production` for optimizations:
+
+```bash
+cross-env NODE_ENV=production webpack
+```
+
+Optimizations include:
+- Tree shaking
+- Minification
+- Dead code elimination
+
+## Testing
+
+Run tests before building:
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Watch all tests
+npm run test:watch:all
+```
+
+## Publishing to NPM
+
+Publish the OSS version to npm:
+
+```bash
+npm run publish:npm
+```
+
+This command:
+1. Builds with production optimizations
+2. Publishes to npm with public access
+
+<Warning>
+Only authorized maintainers should publish to npm.
+</Warning>
+
+## Directory Structure
+
+```
+apps/cli/
+├── build/              # Compiled JavaScript output
+│   └── bw.js          # Main CLI entry point
+├── dist/              # Platform-specific binaries
+│   ├── oss/
+│   │   ├── windows/
+│   │   ├── macos/
+│   │   ├── macos-arm64/
+│   │   ├── linux/
+│   │   └── linux-arm64/
+│   └── bit/           # Commercial builds
+├── src/               # TypeScript source code
+│   ├── bw.ts         # Entry point
+│   ├── program.ts    # Core commands
+│   ├── vault.program.ts
+│   ├── serve.program.ts
+│   └── ...
+└── package.json
+```
+
+## Common Issues
+
+### Build Failures
+
+**TypeScript errors**: Ensure you're using a compatible Node.js version
+
+```bash
+node --version  # Should be latest LTS
+```
+
+**Missing dependencies**: Clean install
+
+```bash
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Packaging Failures
+
+**pkg not found**: Install globally
+
+```bash
+npm install -g pkg
+```
+
+**Asset bundling issues**: Verify the build output exists
+
+```bash
+ls -la build/bw.js
+```
+
+## Custom Builds
+
+To create a custom build for specific requirements:
+
+1. **Modify source**: Make changes to TypeScript files in `src/`
+2. **Build**: Run `npm run build:oss` or `npm run build:oss:prod`
+3. **Test**: Run the built CLI with `node build/bw.js`
+4. **Package**: Create executables for your target platforms
+
+### Example: Custom Command
+
+Add a custom command in `src/program.ts`:
+
+```typescript
+program
+  .command("custom")
+  .description("My custom command")
+  .action(async () => {
+    // Your custom logic
+    const response = Response.success("Custom command executed!");
+    this.processResponse(response);
+  });
+```
+
+Build and test:
+
+```bash
+npm run build:oss
+node build/bw.js custom
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="./commands">
+    Learn about all available CLI commands
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="https://contributing.bitwarden.com/">
+    Contribution guidelines and development setup
+  </Card>
+</CardGroup>

@@ -1,0 +1,143 @@
+---
+title: Desktop App Overview
+description: Bitwarden's Electron-based desktop application for Windows, macOS, and Linux
+---
+
+The Bitwarden Desktop application is a cross-platform password manager built with Electron and Angular. It provides a native desktop experience while sharing most of its core logic with other Bitwarden clients.
+
+## Supported Platforms
+
+The desktop app supports the following platforms:
+
+- **Windows**: x64, ARM64, and ia32 architectures
+  - Microsoft Store version
+  - Portable version
+  - Standard installer
+- **macOS**: Universal binaries (Intel + Apple Silicon)
+  - Mac App Store (MAS) version
+  - Direct download DMG
+- **Linux**: x64 and ARM64
+  - AppImage
+  - Snap package
+  - Flatpak
+  - tar.gz archive
+
+## Technology Stack
+
+### Frontend
+
+- **Framework**: Angular
+- **Runtime**: Electron renderer process (Chromium-based)
+- **UI**: Component Library shared across Bitwarden clients
+- **Styling**: Tailwind CSS
+
+### Backend (Main Process)
+
+- **Runtime**: Electron main process (Node.js)
+- **Native Modules**: Rust via N-API
+- **IPC**: Electron's Inter-Process Communication
+
+### Native Integration
+
+The desktop app includes Rust-based native modules for:
+
+- **Biometric authentication**: Windows Hello, Touch ID, Linux polkit
+- **SSH Agent**: Secure SSH key management
+- **Autofill**: Platform-native autofill providers
+- **Clipboard**: Secure clipboard operations
+- **Password storage**: OS keychain integration
+- **Process isolation**: Security sandboxing
+- **Chromium import**: Browser password import utilities
+
+## Project Structure
+
+```
+apps/desktop/
+├── src/
+│   ├── main.ts              # Main process entry point
+│   ├── preload.ts           # Preload script
+│   ├── app/                 # Angular application (renderer)
+│   ├── main/                # Main process modules
+│   ├── platform/            # Platform services
+│   ├── auth/                # Authentication
+│   ├── autofill/            # Autofill functionality
+│   └── key-management/      # Biometrics & key management
+├── desktop_native/          # Rust native modules
+│   ├── core/                # Core Rust functionality
+│   ├── napi/                # N-API bindings
+│   ├── autofill_provider/   # Platform autofill
+│   ├── ssh_agent/           # SSH agent
+│   └── ...
+├── resources/               # App resources & icons
+└── package.json
+```
+
+## Key Features
+
+### Native Integration
+
+- **Biometric Unlock**: Platform-native biometric authentication
+- **Auto-start**: Launch on system startup
+- **System Tray**: Background operation with tray icon
+- **Native Notifications**: OS-level notifications
+- **Dark Mode**: System theme integration
+
+### Browser Integration
+
+- **Native Messaging**: Communication with browser extensions
+- **Password Import**: Import from Chrome, Edge, and other Chromium browsers
+- **DuckDuckGo Integration**: Specialized manifest generation
+
+### Security Features
+
+- **Process Isolation**: Sandboxed processes for enhanced security
+- **Secure Memory**: Memory encryption for sensitive data
+- **SSH Agent**: Secure SSH key storage and usage
+- **Clipboard Protection**: Secure clipboard with auto-clear
+
+## Version Information
+
+Current version: **2026.2.1**
+
+The desktop app is part of the Bitwarden Clients monorepo and shares versioning with other client applications.
+
+## Platform Detection
+
+The app automatically detects the platform and adjusts functionality:
+
+```typescript
+// Device type detection
+switch (process.platform) {
+  case "win32":
+    return DeviceType.WindowsDesktop;
+  case "darwin":
+    return DeviceType.MacOsDesktop;
+  default:
+    return DeviceType.LinuxDesktop;
+}
+```
+
+Platform-specific features include:
+
+- **Windows**: Windows Hello, DPAPI for secure storage, Registry access
+- **macOS**: Touch ID, Keychain integration, Safari autofill extension
+- **Linux**: Polkit authentication, Secret Service API, X11/Wayland support
+
+## Distribution Variants
+
+The build system supports multiple distribution variants:
+
+- **Standard**: Regular installer/package
+- **Portable**: Windows portable executable
+- **Store**: Microsoft Store and Mac App Store versions
+- **Beta**: Beta channel builds with separate configuration
+
+<Note>
+Store versions (Microsoft Store, Mac App Store) have additional restrictions and require specific entitlements and provisioning profiles.
+</Note>
+
+## Related Documentation
+
+- [Building the Desktop App](/apps/desktop/building)
+- [Architecture Details](/apps/desktop/architecture)
+- [Native Modules](/apps/desktop/native-modules)

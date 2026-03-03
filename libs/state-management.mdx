@@ -1,0 +1,93 @@
+---
+title: State Management Library
+description: State management libraries for Bitwarden clients
+---
+
+## State Management Libraries
+
+Bitwarden uses several libraries for centralized state management across all client applications.
+
+## Core Libraries
+
+<CardGroup cols={2}>
+  <Card title="@bitwarden/state" icon="database" href="/guide/state/overview">
+    State Provider Framework for centralized state management
+  </Card>
+  <Card title="@bitwarden/state-internal" icon="lock">
+    Internal state management utilities and implementations
+  </Card>
+</CardGroup>
+
+## State Provider Framework
+
+The `@bitwarden/state` library provides the State Provider Framework, which enables:
+
+- **Domain ownership** - Teams own their state definitions
+- **Best practices enforcement** - Reduces boilerplate and prevents mistakes
+- **Multi-account support** - Built-in account switching
+- **Reactive observables** - Trustworthy state streams
+- **Testing support** - Comprehensive fake/mock implementations
+
+### Key Components
+
+- **StateProvider** - Main entry point for accessing state
+- **StateDefinition** - Defines storage location and namespace
+- **KeyDefinition** - Defines specific state keys with serialization
+- **GlobalState** - Application-wide state
+- **SingleUserState** - User-scoped state
+- **DerivedState** - Computed state based on other state
+
+## State Testing Utilities
+
+The `@bitwarden/state-test-utils` library provides testing utilities:
+
+```typescript
+import { FakeStateProvider } from "@bitwarden/state-test-utils";
+
+describe("MyService", () => {
+  let stateProvider: FakeStateProvider;
+
+  beforeEach(() => {
+    stateProvider = new FakeStateProvider();
+  });
+
+  it("should update state", async () => {
+    const service = new MyService(stateProvider);
+    await service.setSetting("value");
+    
+    const state = stateProvider.getGlobal(MY_SETTING);
+    expect(await firstValueFrom(state.state$)).toBe("value");
+  });
+});
+```
+
+## Storage Locations
+
+State can be persisted in different locations depending on requirements:
+
+- **Disk** - Persistent storage (survives app restarts)
+- **Memory** - In-memory cache (cleared on restart)
+- **Disk-Local** (Web only) - Local storage instead of session storage
+
+Platform-specific implementations handle the actual storage mechanism:
+- **Browser**: chrome.storage API or browser.storage API
+- **Desktop**: Electron's native storage
+- **Web**: localStorage or sessionStorage
+- **CLI**: File-based storage
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="State Overview" icon="book" href="/guide/state/overview">
+    Learn about the State Provider Framework
+  </Card>
+  <Card title="State Services" icon="server" href="/guide/state/services">
+    How to use state in services
+  </Card>
+  <Card title="State Migrations" icon="arrow-right-arrow-left" href="/guide/state/migrations">
+    Migrating state between versions
+  </Card>
+  <Card title="Platform Library" icon="layer-group" href="/libs/platform">
+    Platform abstractions and services
+  </Card>
+</CardGroup>

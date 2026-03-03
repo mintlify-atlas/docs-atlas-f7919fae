@@ -1,0 +1,315 @@
+---
+title: 'Vault Library'
+description: 'Vault management library for cipher operations, folders, and collections'
+---
+
+<Info>
+The Vault library (`@bitwarden/vault`) represents the public API of the Vault team at Bitwarden. It handles all vault item operations, including cipher management, folders, and collections.
+</Info>
+
+## Overview
+
+The Vault library provides comprehensive functionality for managing vault items (ciphers), organizing them into folders and collections, and handling vault filtering and display. It includes both the business logic services and UI components for creating, viewing, and editing vault items.
+
+## Core Concepts
+
+### Ciphers
+
+Ciphers are the encrypted vault items that store sensitive user data. Bitwarden supports multiple cipher types:
+
+<CardGroup cols={2}>
+  <Card title="Login" icon="right-to-bracket">
+    Username/password credentials with URIs for autofill
+  </Card>
+  <Card title="Card" icon="credit-card">
+    Payment card information with cardholder details
+  </Card>
+  <Card title="Identity" icon="id-card">
+    Personal identification information and addresses
+  </Card>
+  <Card title="Secure Note" icon="note-sticky">
+    Encrypted text notes and documents
+  </Card>
+  <Card title="SSH Key" icon="key">
+    SSH private keys and authentication credentials
+  </Card>
+</CardGroup>
+
+### Folders
+
+Folders provide personal organization for vault items. Each user can create their own folder hierarchy to categorize their ciphers.
+
+### Collections
+
+Collections are shared organizational units within an organization. They enable teams to share specific sets of vault items with defined groups of users.
+
+## Directory Structure
+
+```
+libs/vault/
+├── src/
+│   ├── abstractions/           # Service interfaces
+│   │   ├── vault-filter.service.ts
+│   │   └── vault-items-transfer.service.ts
+│   ├── cipher-form/           # Cipher creation/editing
+│   │   ├── abstractions/
+│   │   ├── components/
+│   │   │   ├── login-details-section/
+│   │   │   ├── card-details-section/
+│   │   │   ├── identity/
+│   │   │   ├── sshkey-section/
+│   │   │   ├── custom-fields/
+│   │   │   ├── attachments/
+│   │   │   └── autofill-options/
+│   │   └── services/
+│   ├── cipher-view/           # Cipher viewing/display
+│   │   ├── login-credentials/
+│   │   ├── card-details/
+│   │   ├── view-identity-sections/
+│   │   ├── custom-fields/
+│   │   ├── attachments/
+│   │   └── item-history/
+│   ├── components/            # Shared components
+│   │   ├── add-edit-folder-dialog/
+│   │   ├── new-cipher-menu/
+│   │   └── download-attachment/
+│   ├── services/             # Business logic services
+│   ├── models/               # Data models
+│   ├── pipes/                # Angular pipes
+│   └── directives/           # Angular directives
+```
+
+## Key Services
+
+### CipherFormService
+
+Manages cipher creation and modification with proper encryption handling.
+
+```typescript libs/vault/src/cipher-form/abstractions/cipher-form.service.ts
+abstract class CipherFormService {
+  /**
+   * Decrypt a cipher for viewing/editing
+   */
+  abstract decryptCipher(cipher: Cipher): Promise<CipherView>;
+  
+  /**
+   * Save new or modified cipher to server
+   */
+  abstract saveCipher(
+    cipher: CipherView,
+    config: CipherFormConfig
+  ): Promise<CipherView>;
+}
+```
+
+### VaultFilterService
+
+Provides filtering and organization tree functionality for the vault.
+
+```typescript libs/vault/src/abstractions/vault-filter.service.ts
+abstract class VaultFilterService {
+  // Observable streams for filtered data
+  collapsedFilterNodes$: Observable<Set<string>>;
+  filteredFolders$: Observable<FolderView[]>;
+  filteredCollections$: Observable<CollectionView[]>;
+  
+  // Tree structures for navigation
+  organizationTree$: Observable<TreeNode<OrganizationFilter>>;
+  folderTree$: Observable<TreeNode<FolderFilter>>;
+  collectionTree$: Observable<TreeNode<CollectionFilter>>;
+  cipherTypeTree$: Observable<TreeNode<CipherTypeFilter>>;
+  
+  // Filter management methods
+  abstract setOrganizationFilter(organization: Organization): void;
+  abstract clearOrganizationFilter(): void;
+  abstract expandOrgFilter(userId: UserId): Promise<void>;
+}
+```
+
+### VaultItemsTransferService
+
+Handles moving vault items between collections and organizations.
+
+```typescript libs/vault/src/abstractions/vault-items-transfer.service.ts
+abstract class VaultItemsTransferService {
+  abstract transferCiphers(
+    cipherIds: string[],
+    targetCollection: CollectionView,
+    organization: Organization
+  ): Promise<void>;
+}
+```
+
+### ChangeLoginPasswordService
+
+Manages password change operations for login ciphers.
+
+```typescript libs/vault/src/abstractions/change-login-password.service.ts
+abstract class ChangeLoginPasswordService {
+  abstract changePassword(
+    cipher: CipherView,
+    newPassword: string
+  ): Promise<CipherView>;
+}
+```
+
+## Cipher Form Components
+
+The library provides a comprehensive set of components for cipher creation and editing:
+
+### Type-Specific Sections
+
+- **LoginDetailsSection** - Username, password, TOTP, and URI management
+- **CardDetailsSection** - Card number, CVV, expiration, cardholder name
+- **IdentitySection** - Name, address, SSN, passport information
+- **SshKeySection** - Private key, public key, fingerprint
+
+### Common Sections
+
+- **ItemDetailsSection** - Name, folder, favorites
+- **CustomFieldsSection** - User-defined custom fields (text, hidden, boolean, linked)
+- **AttachmentsSection** - File attachments to vault items
+- **AutofillOptionsSection** - URI matching rules for login items
+- **AdditionalOptionsSection** - Notes, reprompt settings
+
+## Cipher View Components
+
+Read-only components for displaying decrypted cipher information:
+
+- **LoginCredentialsView** - Display username, password with copy/reveal
+- **CardDetailsView** - Display card information securely
+- **ViewIdentitySections** - Display identity fields
+- **CustomFieldsView** - Display custom field values
+- **ItemHistoryView** - Show creation/modification timestamps
+
+## Vault Filtering
+
+The vault filter system provides hierarchical organization:
+
+```typescript
+// Filter types
+type VaultFilter = 
+  | OrganizationFilter    // Filter by organization
+  | FolderFilter          // Filter by folder
+  | CollectionFilter      // Filter by collection
+  | CipherTypeFilter;     // Filter by cipher type
+
+// Tree structure for navigation
+interface TreeNode<T> {
+  node: T;
+  children: TreeNode<T>[];
+}
+```
+
+### Filter Sections
+
+<Steps>
+  <Step title="Type Filters">
+    Filter by cipher type: All Items, Favorites, Logins, Cards, Identities, Secure Notes, SSH Keys, Trash
+  </Step>
+  
+  <Step title="Folder Filters">
+    Personal folder hierarchy with nested folder support
+  </Step>
+  
+  <Step title="Collection Filters">
+    Organization collections with hierarchical names (e.g., "Team/Engineering/Credentials")
+  </Step>
+  
+  <Step title="Organization Filters">
+    Filter items by organization membership
+  </Step>
+</Steps>
+
+## Autofill Configuration
+
+For login ciphers, the library provides URI matching configuration:
+
+```typescript
+enum UriMatchType {
+  Domain = 0,
+  Host = 1,
+  StartsWith = 2,
+  Exact = 3,
+  RegularExpression = 4,
+  Never = 5
+}
+```
+
+### URI Matching Examples
+
+| Match Type | URI Pattern | Matches |
+|-----------|-------------|----------|
+| Domain | `example.com` | `https://example.com`, `https://app.example.com` |
+| Host | `app.example.com` | `https://app.example.com` (exact host) |
+| StartsWith | `https://app.example.com/login` | URLs starting with this prefix |
+| Exact | `https://app.example.com/login` | Exact URL match only |
+| RegularExpression | `^https://.*\.example\.com$` | Regex pattern matching |
+| Never | (any) | Never suggest for autofill |
+
+## Custom Fields
+
+Vault items support extensible custom fields:
+
+```typescript
+enum FieldType {
+  Text = 0,      // Plain text field
+  Hidden = 1,    // Password/hidden field
+  Boolean = 2,   // Checkbox field
+  Linked = 3     // Linked to another cipher field
+}
+```
+
+## Domain Boundaries
+
+<Info>
+**Vault vs. Platform**: The Vault library handles vault item business logic and UI components, while encryption/decryption primitives are provided by `@bitwarden/platform`. The vault library uses platform services for crypto operations.
+</Info>
+
+<Info>
+**Vault vs. Admin Console**: Folders are personal to each user and managed in the Vault library. Collections are organizational resources managed by the Admin Console library, though the Vault library provides UI for working with assigned collections.
+</Info>
+
+<Info>
+**Vault vs. Autofill**: While the Vault library defines cipher structures and URI matching rules, the actual autofill behavior (detecting fields, injecting credentials) is handled by platform-specific autofill implementations.
+</Info>
+
+## Usage Example
+
+```typescript
+import { 
+  CipherFormService,
+  VaultFilterService,
+  CipherView,
+  CipherType 
+} from '@bitwarden/vault';
+
+// Create a new login cipher
+const loginCipher = new CipherView();
+loginCipher.type = CipherType.Login;
+loginCipher.name = 'Example Account';
+loginCipher.login.username = 'user@example.com';
+loginCipher.login.password = 'securePassword123';
+loginCipher.login.uris = [{
+  uri: 'https://example.com',
+  match: UriMatchType.Domain
+}];
+
+// Save the cipher
+const savedCipher = await cipherFormService.saveCipher(
+  loginCipher,
+  { mode: 'add' }
+);
+
+// Filter vault by login items
+vaultFilterService.cipherTypeTree$.subscribe(tree => {
+  const loginNode = tree.children.find(n => n.node.type === CipherType.Login);
+  console.log('Login items:', loginNode);
+});
+```
+
+## Related Libraries
+
+- **[@bitwarden/platform](/libs/platform)** - Encryption and state management
+- **[@bitwarden/admin-console](/libs/admin-console)** - Collections and organization management
+- **[@bitwarden/auth](/libs/auth)** - User authentication for vault access

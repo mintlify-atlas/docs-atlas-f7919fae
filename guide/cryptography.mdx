@@ -1,0 +1,271 @@
+---
+title: "Cryptographic Architecture"
+description: "Overview of Bitwarden's cryptographic design and end-to-end encryption model"
+---
+
+## Overview
+
+Bitwarden implements a comprehensive cryptographic architecture built on end-to-end encryption principles. All sensitive data is encrypted client-side before transmission to servers, ensuring that only the user can decrypt their vault data.
+
+## Core Cryptographic Principles
+
+### End-to-End Encryption
+
+Bitwarden employs end-to-end encryption where:
+
+- **Client-side encryption**: All encryption and decryption operations occur on the client
+- **Zero-knowledge architecture**: The server never has access to unencrypted data or encryption keys
+- **User-controlled keys**: Only the user possesses the keys needed to decrypt their vault
+
+<Warning>
+The server cannot decrypt user data. If a user loses their master password, their encrypted vault data cannot be recovered by Bitwarden.
+</Warning>
+
+## Key Hierarchy
+
+Bitwarden uses a hierarchical key structure:
+
+### Master Key
+
+The master key is derived from the user's master password using a Key Derivation Function (KDF):
+
+```typescript
+// From libs/key-management/src/key.service.ts:254
+async makeMasterKey(password: string, email: string, kdfConfig: KdfConfig): Promise<MasterKey> {
+  email = email.trim().toLowerCase();
+  const masterKey = await this.keyGenerationService.deriveKeyFromPassword(
+    password,
+    email,
+    kdfConfig,
+  ) as MasterKey;
+  return masterKey;
+}
+```
+
+- **Input**: Master password + email (used as salt)
+- **Process**: KDF (PBKDF2 or Argon2id)
+- **Output**: 256-bit master key
+- **Storage**: Never stored; derived on-demand from password
+
+### User Key
+
+The user key is a symmetric key that actually encrypts vault data:
+
+```typescript
+// From libs/key-management/src/key.service.ts:187
+async makeUserKey(masterKey: MasterKey): Promise<[UserKey, EncString]> {
+  const newUserKey = await this.keyGenerationService.createKey(512);
+  return this.buildProtectedSymmetricKey(masterKey, newUserKey);
+}
+```
+
+- **Type**: 512-bit symmetric key (AES-256 + HMAC-SHA256)
+- **Generation**: Cryptographically secure random number generator (CSPRNG)
+- **Protection**: Encrypted with the master key
+- **Storage**: Encrypted user key stored server-side and locally
+
+### Organization Keys
+
+For shared organization vaults:
+
+```typescript
+// From libs/key-management/src/abstractions/key.service.ts:231
+abstract makeOrgKey<T extends OrgKey | ProviderKey>(userId: UserId): Promise<[EncString, T]>;
+```
+
+- **Generation**: 512-bit symmetric key per organization
+- **Protection**: Encrypted with user's public key (RSA-2048)
+- **Sharing**: Encrypted separately for each organization member
+
+## Encryption Types
+
+Bitwarden supports multiple encryption algorithms:
+
+### Symmetric Encryption
+
+```typescript
+// From libs/common/src/platform/enums/encryption-type.enum.ts
+export enum EncryptionType {
+  AesCbc256_B64 = 0,                      // Legacy: AES-256-CBC
+  AesCbc256_HmacSha256_B64 = 2,          // Current: AES-256-CBC + HMAC-SHA256
+  CoseEncrypt0 = 7,                       // Modern: XChaCha20-Poly1305
+}
+```
+
+#### AES-256-CBC with HMAC-SHA256 (Primary)
+
+- **Encryption**: AES-256 in CBC mode
+- **Authentication**: HMAC-SHA256
+- **Key size**: 512 bits (256-bit encryption key + 256-bit MAC key)
+- **IV**: Randomly generated per encryption operation
+
+```typescript
+// From libs/common/src/platform/models/domain/symmetric-crypto-key.ts:49
+if (key.byteLength === 64) {
+  this.innerKey = {
+    type: EncryptionType.AesCbc256_HmacSha256_B64,
+    encryptionKey: key.slice(0, 32),
+    authenticationKey: key.slice(32),
+  };
+}
+```
+
+<Warning>
+All encrypted data must be authenticated with HMAC-SHA256 to prevent tampering and chosen-ciphertext attacks.
+</Warning>
+
+#### XChaCha20-Poly1305 (Modern)
+
+- **Algorithm**: XChaCha20-Poly1305 AEAD
+- **Encoding**: COSE (CBOR Object Signing and Encryption)
+- **Benefits**: Authenticated encryption, better performance on some platforms
+
+### Asymmetric Encryption
+
+```typescript
+export enum EncryptionType {
+  Rsa2048_OaepSha256_B64 = 3,                    // RSA-OAEP with SHA-256
+  Rsa2048_OaepSha1_B64 = 4,                      // Legacy: RSA-OAEP with SHA-1
+  Rsa2048_OaepSha256_HmacSha256_B64 = 5,        // RSA-OAEP + HMAC
+  Rsa2048_OaepSha1_HmacSha256_B64 = 6,          // Legacy: RSA-OAEP + HMAC
+}
+```
+
+- **Key size**: 2048-bit RSA
+- **Padding**: OAEP (Optimal Asymmetric Encryption Padding)
+- **Usage**: Organization key sharing, key encapsulation
+
+## Key Derivation Functions
+
+Bitwarden supports two KDFs for deriving the master key from the master password:
+
+### PBKDF2-SHA256
+
+```typescript
+// From libs/key-management/src/models/kdf-config.ts:17
+export class PBKDF2KdfConfig {
+  static ITERATIONS = new RangeWithDefault(600_000, 2_000_000, 600_000);
+  kdfType: KdfType.PBKDF2_SHA256 = KdfType.PBKDF2_SHA256;
+  iterations: number;
+}
+```
+
+- **Default iterations**: 600,000 (OWASP recommended minimum)
+- **Range**: 600,000 to 2,000,000 iterations
+- **Algorithm**: PBKDF2 with SHA-256
+- **Purpose**: Derive master key from password + email
+
+<Warning>
+Using fewer than 600,000 iterations significantly weakens password security. Always use the default or higher values.
+</Warning>
+
+### Argon2id
+
+```typescript
+// From libs/key-management/src/models/kdf-config.ts:66
+export class Argon2KdfConfig {
+  static MEMORY = new RangeWithDefault(16, 1024, 64);      // MB
+  static PARALLELISM = new RangeWithDefault(1, 16, 4);     // threads
+  static ITERATIONS = new RangeWithDefault(2, 10, 3);      // iterations
+}
+```
+
+- **Default**: 3 iterations, 64 MB memory, 4 parallel threads
+- **Algorithm**: Argon2id (winner of Password Hashing Competition)
+- **Benefits**: Memory-hard, resistant to GPU/ASIC attacks
+
+## Encryption Services
+
+The encryption architecture is modular:
+
+### EncryptService
+
+```typescript
+// From libs/common/src/key-management/crypto/abstractions/encrypt.service.ts
+abstract class EncryptService {
+  abstract encryptString(plainValue: string, key: SymmetricCryptoKey): Promise<EncString>;
+  abstract decryptString(encString: EncString, key: SymmetricCryptoKey): Promise<string>;
+  abstract wrapSymmetricKey(keyToBeWrapped: SymmetricCryptoKey, wrappingKey: SymmetricCryptoKey): Promise<EncString>;
+  abstract unwrapSymmetricKey(keyToBeUnwrapped: EncString, wrappingKey: SymmetricCryptoKey): Promise<SymmetricCryptoKey>;
+}
+```
+
+Provides high-level encryption/decryption operations:
+- String encryption/decryption
+- File encryption/decryption
+- Key wrapping/unwrapping
+- Key encapsulation (RSA)
+
+### CryptoFunctionService
+
+```typescript
+// From libs/common/src/key-management/crypto/abstractions/crypto-function.service.ts
+abstract class CryptoFunctionService {
+  abstract pbkdf2(password: string | Uint8Array, salt: string | Uint8Array, algorithm: "sha256" | "sha512", iterations: number): Promise<Uint8Array>;
+  abstract aesGenerateKey(bitLength: 128 | 192 | 256 | 512): Promise<CsprngArray>;
+  abstract randomBytes(length: number): Promise<CsprngArray>;
+  abstract rsaGenerateKeyPair(length: 2048): Promise<[Uint8Array, Uint8Array]>;
+}
+```
+
+Provides low-level cryptographic primitives:
+- PBKDF2/Argon2id key derivation
+- HKDF key expansion
+- Hash functions (SHA-1, SHA-256, SHA-512)
+- HMAC operations
+- RSA operations
+- Random number generation (CSPRNG)
+
+## Encrypted String Format
+
+Encrypted data is serialized in a specific format:
+
+```typescript
+// Format: <encType>.<iv>|<data>|<mac>
+// Example: 2.base64iv|base64data|base64mac
+
+class EncString {
+  encryptionType: EncryptionType;
+  iv: string;          // Base64-encoded initialization vector
+  data: string;        // Base64-encoded ciphertext
+  mac: string;         // Base64-encoded HMAC
+}
+```
+
+### Format Examples
+
+- **AES-CBC-256 + HMAC**: `2.iv|data|mac`
+- **RSA-OAEP**: `3.data`
+- **RSA-OAEP + HMAC**: `5.data|mac`
+
+## Security Best Practices
+
+<Warning>
+Never store master keys or unencrypted user keys persistently. Keys should only exist in memory during active sessions.
+</Warning>
+
+### Key Storage Guidelines
+
+1. **Master Key**: Never stored; always derived from password
+2. **User Key**: Stored encrypted with master key
+3. **Organization Keys**: Stored encrypted with user's public key
+4. **Private Key**: Stored encrypted with user key
+
+### Encryption Guidelines
+
+1. Always use authenticated encryption (HMAC or AEAD)
+2. Generate unique IVs for each encryption operation
+3. Use CSPRNG for all random data (keys, IVs, salts)
+4. Validate MACs before decrypting (prevent oracle attacks)
+
+## Related Topics
+
+- [Encryption Implementation](/guide/encryption) - Details on how data is encrypted
+- [Key Management](/guide/key-management) - Key lifecycle and storage
+- [Vault Security](/api/crypto/crypto-service) - Vault-specific encryption
+
+## References
+
+- `libs/key-management/` - Key management implementation
+- `libs/common/src/key-management/crypto/` - Cryptographic services
+- `libs/common/src/platform/enums/encryption-type.enum.ts` - Encryption types

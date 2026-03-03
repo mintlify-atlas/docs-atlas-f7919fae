@@ -1,0 +1,289 @@
+---
+title: Storage Service
+description: Storage abstraction service for persisting and retrieving data
+---
+
+## Overview
+
+The Storage Service provides an abstract interface for storing and retrieving data across different storage backends. It supports various storage locations (disk, memory, session) and optional secure storage encryption.
+
+## StorageService
+
+The base abstract class that all storage implementations must extend.
+
+### Interface
+
+```typescript
+abstract class StorageService {
+  abstract get valuesRequireDeserialization(): boolean;
+  abstract get<T>(key: string, options?: StorageOptions): Promise<T>;
+  abstract has(key: string, options?: StorageOptions): Promise<boolean>;
+  abstract save<T>(key: string, obj: T, options?: StorageOptions): Promise<void>;
+  abstract remove(key: string, options?: StorageOptions): Promise<void>;
+}
+```
+
+### Properties
+
+#### `valuesRequireDeserialization`
+
+```typescript
+abstract get valuesRequireDeserialization(): boolean;
+```
+
+Indicates whether values stored in this storage service require deserialization when retrieved.
+
+### Methods
+
+#### `get<T>()`
+
+```typescript
+abstract get<T>(key: string, options?: StorageOptions): Promise<T>;
+```
+
+Retrieves a value from storage.
+
+**Parameters:**
+- `key` (string): The storage key to retrieve
+- `options` (StorageOptions, optional): Configuration options for the storage operation
+
+**Returns:** `Promise<T>` - The stored value, typed according to the generic parameter
+
+**Example:**
+```typescript
+const userData = await storageService.get<UserData>('user-settings');
+```
+
+#### `has()`
+
+```typescript
+abstract has(key: string, options?: StorageOptions): Promise<boolean>;
+```
+
+Checks whether a key exists in storage.
+
+**Parameters:**
+- `key` (string): The storage key to check
+- `options` (StorageOptions, optional): Configuration options for the storage operation
+
+**Returns:** `Promise<boolean>` - True if the key exists, false otherwise
+
+**Example:**
+```typescript
+const exists = await storageService.has('user-settings');
+if (exists) {
+  // Handle existing data
+}
+```
+
+#### `save<T>()`
+
+```typescript
+abstract save<T>(key: string, obj: T, options?: StorageOptions): Promise<void>;
+```
+
+Saves a value to storage.
+
+**Parameters:**
+- `key` (string): The storage key to save under
+- `obj` (T): The value to store
+- `options` (StorageOptions, optional): Configuration options for the storage operation
+
+**Returns:** `Promise<void>`
+
+**Example:**
+```typescript
+await storageService.save('user-settings', { theme: 'dark', language: 'en' });
+```
+
+#### `remove()`
+
+```typescript
+abstract remove(key: string, options?: StorageOptions): Promise<void>;
+```
+
+Removes a value from storage.
+
+**Parameters:**
+- `key` (string): The storage key to remove
+- `options` (StorageOptions, optional): Configuration options for the storage operation
+
+**Returns:** `Promise<void>`
+
+**Example:**
+```typescript
+await storageService.remove('user-settings');
+```
+
+## ObservableStorageService
+
+An interface that extends storage services with observable update streams.
+
+### Interface
+
+```typescript
+interface ObservableStorageService {
+  get updates$(): Observable<StorageUpdate>;
+}
+```
+
+### Properties
+
+#### `updates$`
+
+```typescript
+get updates$(): Observable<StorageUpdate>;
+```
+
+Provides an observable stream of storage updates that have occurred in this storage service or in the underlying storage backend.
+
+**Returns:** `Observable<StorageUpdate>` - Stream of storage update events
+
+**Example:**
+```typescript
+storageService.updates$.subscribe((update) => {
+  console.log(`Key ${update.key} was ${update.updateType}`);
+});
+```
+
+## Types
+
+### StorageOptions
+
+```typescript
+type StorageOptions = {
+  storageLocation?: StorageLocation;
+  useSecureStorage?: boolean;
+  userId?: string;
+  htmlStorageLocation?: HtmlStorageLocation;
+  keySuffix?: string;
+};
+```
+
+Configuration options for storage operations.
+
+**Properties:**
+- `storageLocation` (StorageLocation, optional): The location where data should be stored (disk, memory, or both)
+- `useSecureStorage` (boolean, optional): Whether to use encrypted secure storage
+- `userId` (string, optional): User ID to scope the storage key to a specific user
+- `htmlStorageLocation` (HtmlStorageLocation, optional): HTML5 storage location (local, session, or memory)
+- `keySuffix` (string, optional): Suffix to append to the storage key
+
+### StorageUpdate
+
+```typescript
+type StorageUpdate = {
+  key: string;
+  updateType: StorageUpdateType;
+};
+```
+
+Represents a storage update event.
+
+**Properties:**
+- `key` (string): The storage key that was updated
+- `updateType` (StorageUpdateType): The type of update that occurred
+
+### StorageUpdateType
+
+```typescript
+type StorageUpdateType = "save" | "remove";
+```
+
+The type of storage update operation.
+
+### StorageLocation
+
+```typescript
+enum StorageLocationEnum {
+  Both = "both",
+  Disk = "disk",
+  Memory = "memory",
+}
+```
+
+Specifies where data should be persisted.
+
+- `Both`: Store in both disk and memory
+- `Disk`: Store on disk for persistence across sessions
+- `Memory`: Store in memory only (cleared on restart)
+
+### HtmlStorageLocation
+
+```typescript
+enum HtmlStorageLocation {
+  Local = "local",
+  Memory = "memory",
+  Session = "session",
+}
+```
+
+Specifies HTML5 storage location for browser-based implementations.
+
+- `Local`: Use localStorage (persists across sessions)
+- `Memory`: Use in-memory storage (cleared on page reload)
+- `Session`: Use sessionStorage (persists for session only)
+
+## Usage Examples
+
+### Basic Storage Operations
+
+```typescript
+// Save data
+await storageService.save('user-preferences', {
+  theme: 'dark',
+  notifications: true
+});
+
+// Retrieve data
+const prefs = await storageService.get<UserPreferences>('user-preferences');
+
+// Check existence
+if (await storageService.has('user-preferences')) {
+  // Key exists
+}
+
+// Remove data
+await storageService.remove('user-preferences');
+```
+
+### Using Storage Options
+
+```typescript
+// Save to secure storage for a specific user
+await storageService.save(
+  'auth-token',
+  token,
+  {
+    useSecureStorage: true,
+    userId: 'user-123',
+    storageLocation: StorageLocationEnum.Disk
+  }
+);
+
+// Retrieve from memory storage
+const cachedData = await storageService.get(
+  'cache-key',
+  { storageLocation: StorageLocationEnum.Memory }
+);
+```
+
+### Observing Storage Updates
+
+```typescript
+// Subscribe to all storage updates
+storageService.updates$.subscribe((update) => {
+  if (update.updateType === 'save') {
+    console.log(`Data saved to ${update.key}`);
+  } else if (update.updateType === 'remove') {
+    console.log(`Data removed from ${update.key}`);
+  }
+});
+
+// Filter updates for specific keys
+storageService.updates$
+  .pipe(filter(update => update.key === 'user-settings'))
+  .subscribe((update) => {
+    console.log('User settings changed');
+  });
+```

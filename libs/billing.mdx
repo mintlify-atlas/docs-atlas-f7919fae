@@ -1,0 +1,456 @@
+---
+title: 'Billing Library'
+description: 'Subscription management and billing operations for Bitwarden services'
+---
+
+<Info>
+The Billing library (`@bitwarden/billing`) represents the public API of the Billing team at Bitwarden. It handles subscription management, payment processing, and billing operations for both individual and organization accounts.
+</Info>
+
+## Overview
+
+The Billing library provides services and models for managing Bitwarden subscriptions across different product tiers. It handles payment method management, subscription upgrades and downgrades, invoice history, and billing-related user interfaces.
+
+## Core Concepts
+
+### Subscription Types
+
+Bitwarden offers multiple subscription tiers:
+
+<CardGroup cols={2}>
+  <Card title="Individual Plans" icon="user">
+    Personal Premium and Family Organization subscriptions
+  </Card>
+  <Card title="Business Plans" icon="building">
+    Teams and Enterprise organization subscriptions
+  </Card>
+  <Card title="Free Tier" icon="gift">
+    Limited features for individual users and small teams
+  </Card>
+  <Card title="Trial Periods" icon="clock">
+    Time-limited evaluation of premium features
+  </Card>
+</CardGroup>
+
+### Payment Management
+
+The library handles various payment-related operations:
+
+- **Payment Methods** - Credit cards, PayPal, bank transfers
+- **Invoicing** - Invoice generation and history
+- **Tax Handling** - VAT, sales tax, and tax ID management
+- **Credits** - Account credits and promotional codes
+
+### Organization Billing
+
+For organization subscriptions, the library manages:
+
+- **Seat Management** - User seat allocation and auto-scaling
+- **Storage Add-ons** - Additional storage beyond plan limits
+- **Billing Cycles** - Monthly and annual billing
+- **Payment Ownership** - Designated billing administrators
+
+## Directory Structure
+
+```
+libs/billing/
+├── src/
+│   └── index.ts              # Public API exports
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+<Info>
+The Billing library is currently a minimal library structure. The team is actively developing billing services that will be exported through this public API. Implementation details are primarily in the web vault and server components.
+</Info>
+
+## Subscription Lifecycle
+
+### Individual Subscription
+
+<Steps>
+  <Step title="Free User">
+    User creates account with free tier access
+  </Step>
+  
+  <Step title="Trial (Optional)">
+    User may start a premium trial period
+  </Step>
+  
+  <Step title="Upgrade">
+    User selects plan and provides payment method
+  </Step>
+  
+  <Step title="Active Subscription">
+    User has access to premium features
+  </Step>
+  
+  <Step title="Renewal or Cancellation">
+    Subscription auto-renews or user cancels
+  </Step>
+</Steps>
+
+### Organization Subscription
+
+<Steps>
+  <Step title="Create Organization">
+    Admin creates new organization (free or paid)
+  </Step>
+  
+  <Step title="Select Plan">
+    Admin chooses Teams or Enterprise plan
+  </Step>
+  
+  <Step title="Configure Seats">
+    Admin sets initial user seat count
+  </Step>
+  
+  <Step title="Payment Setup">
+    Admin provides payment method and billing details
+  </Step>
+  
+  <Step title="Manage Subscription">
+    Admin can add seats, change plan, or cancel
+  </Step>
+</Steps>
+
+## Billing Models
+
+### Subscription Plans
+
+```typescript
+enum PlanType {
+  Free = 0,
+  FamiliesAnnually = 1,
+  TeamsMonthly = 2,
+  TeamsAnnually = 3,
+  EnterpriseMonthly = 4,
+  EnterpriseAnnually = 5,
+  Custom = 6
+}
+```
+
+### Plan Features
+
+| Plan | Users | Storage | Collections | Premium Features |
+|------|-------|---------|-------------|------------------|
+| **Free** | 1 | 10 MB | Unlimited | Limited |
+| **Premium** | 1 | 1 GB | Unlimited | Full |
+| **Family** | 6 | 1 GB shared | Unlimited | Full |
+| **Teams** | Variable | 1 GB per user | Unlimited | Full + Admin |
+| **Enterprise** | Variable | 1 GB per user | Unlimited | Full + Advanced Admin |
+
+### Seat-Based Billing
+
+Organization subscriptions use seat-based pricing:
+
+```typescript
+interface SeatManagement {
+  // Current seat allocation
+  seatCount: number;
+  
+  // Assigned seats
+  assignedSeats: number;
+  
+  // Available seats
+  availableSeats: number;
+  
+  // Auto-scaling configuration
+  autoScale: boolean;
+  
+  // Maximum seats (Enterprise only)
+  maxSeats?: number;
+}
+```
+
+## Payment Operations
+
+### Adding Payment Method
+
+```typescript
+interface PaymentMethod {
+  type: 'card' | 'bank_account' | 'paypal';
+  
+  // Card details
+  cardNumber?: string;
+  expirationMonth?: number;
+  expirationYear?: number;
+  cvv?: string;
+  
+  // Billing address
+  postalCode?: string;
+  country?: string;
+  
+  // Tax information
+  taxId?: string;
+  
+  // Set as default
+  isDefault: boolean;
+}
+```
+
+### Processing Subscription Change
+
+```typescript
+interface SubscriptionUpdate {
+  // New plan type
+  planType: PlanType;
+  
+  // Seat changes (organizations)
+  additionalSeats?: number;
+  
+  // Storage add-ons
+  additionalStorageGb?: number;
+  
+  // Billing cycle
+  billingCycle: 'monthly' | 'annual';
+  
+  // Proration handling
+  prorationBehavior: 'create_prorations' | 'none' | 'always_invoice';
+}
+```
+
+### Invoice Management
+
+```typescript
+interface Invoice {
+  id: string;
+  
+  // Invoice details
+  number: string;
+  date: Date;
+  dueDate: Date;
+  
+  // Amounts
+  subtotal: number;
+  tax: number;
+  total: number;
+  
+  // Status
+  status: 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
+  
+  // Line items
+  items: InvoiceItem[];
+  
+  // Payment
+  paidDate?: Date;
+  paymentMethod?: PaymentMethod;
+}
+```
+
+## Billing Events
+
+The billing system handles various events:
+
+### Subscription Events
+
+- **subscription.created** - New subscription started
+- **subscription.updated** - Subscription plan or seats changed
+- **subscription.cancelled** - Subscription cancelled
+- **subscription.renewed** - Subscription successfully renewed
+- **subscription.expired** - Subscription expired (payment failed)
+
+### Payment Events
+
+- **payment.succeeded** - Payment processed successfully
+- **payment.failed** - Payment failed (retry logic)
+- **payment_method.added** - New payment method added
+- **payment_method.expired** - Payment method expired
+
+### Invoice Events
+
+- **invoice.created** - New invoice generated
+- **invoice.paid** - Invoice paid successfully
+- **invoice.payment_failed** - Invoice payment failed
+- **invoice.voided** - Invoice voided/cancelled
+
+## Tax Handling
+
+### VAT and Tax ID
+
+```typescript
+interface TaxInformation {
+  // Tax ID (VAT number, etc.)
+  taxId?: string;
+  
+  // Tax ID type
+  taxIdType?: 'eu_vat' | 'au_abn' | 'in_gst' | 'no_vat' | 'za_vat';
+  
+  // Billing country
+  billingCountry: string;
+  
+  // Postal code for tax calculation
+  postalCode?: string;
+  
+  // Tax rate applied
+  taxRate?: number;
+  
+  // Tax amount
+  taxAmount?: number;
+}
+```
+
+### Tax Exemption
+
+Some organizations may qualify for tax exemption:
+
+```typescript
+interface TaxExemption {
+  // Exempt status
+  isExempt: boolean;
+  
+  // Exemption certificate
+  certificateId?: string;
+  
+  // Exempt regions
+  exemptRegions?: string[];
+  
+  // Verification status
+  verified: boolean;
+}
+```
+
+## Credits and Promotions
+
+### Account Credits
+
+```typescript
+interface AccountCredit {
+  // Credit balance
+  balance: number;
+  
+  // Credit history
+  transactions: CreditTransaction[];
+  
+  // Auto-apply to invoices
+  autoApply: boolean;
+}
+
+interface CreditTransaction {
+  amount: number;
+  description: string;
+  date: Date;
+  type: 'credit' | 'debit';
+}
+```
+
+### Promotional Codes
+
+```typescript
+interface PromoCode {
+  code: string;
+  
+  // Discount type
+  type: 'percentage' | 'fixed_amount' | 'free_trial';
+  
+  // Discount value
+  value: number;
+  
+  // Duration
+  duration: 'once' | 'repeating' | 'forever';
+  durationInMonths?: number;
+  
+  // Validity
+  validFrom?: Date;
+  validUntil?: Date;
+  
+  // Usage limits
+  maxRedemptions?: number;
+  timesRedeemed: number;
+}
+```
+
+## Domain Boundaries
+
+<Info>
+**Billing vs. Admin Console**: The Admin Console creates organizations and manages users, but Billing handles the financial aspects (subscriptions, payments, invoices). When creating an organization, Admin Console works with Billing to set up the subscription.
+</Info>
+
+<Info>
+**Billing vs. Platform**: Billing relies on Platform services for API communication, state management, and notification handling. Billing events trigger platform notifications to users.
+</Info>
+
+<Info>
+**Billing vs. Subscription Service**: The Billing library focuses on payment operations and invoice management. The subscription data itself (active plan, features, limits) may be stored and accessed through platform-level subscription services.
+</Info>
+
+## Usage Example
+
+```typescript
+import { BillingService, PaymentMethod } from '@bitwarden/billing';
+
+// Add payment method
+const paymentMethod: PaymentMethod = {
+  type: 'card',
+  cardNumber: '4242424242424242',
+  expirationMonth: 12,
+  expirationYear: 2025,
+  cvv: '123',
+  postalCode: '12345',
+  country: 'US',
+  isDefault: true
+};
+
+await billingService.addPaymentMethod(paymentMethod);
+
+// Upgrade to premium
+await billingService.upgradeToPremium({
+  planType: PlanType.Premium,
+  billingCycle: 'annual',
+  paymentMethod: paymentMethod
+});
+
+// Create organization subscription
+await billingService.createOrganizationSubscription({
+  planType: PlanType.TeamsAnnually,
+  seats: 10,
+  additionalStorageGb: 0,
+  billingCycle: 'annual',
+  paymentMethod: paymentMethod
+});
+
+// Get invoice history
+const invoices = await billingService.getInvoices({
+  startDate: new Date('2024-01-01'),
+  endDate: new Date('2024-12-31')
+});
+```
+
+## Self-Hosted Billing
+
+For self-hosted Bitwarden instances, billing may work differently:
+
+- **License Keys** - Self-hosted uses license key validation instead of subscription API
+- **Offline Licensing** - License files can be uploaded manually
+- **Organization Licenses** - Separate licensing for self-hosted organizations
+- **Renewal Process** - License renewal through Bitwarden portal
+
+```typescript
+interface SelfHostedLicense {
+  // License key
+  licenseKey: string;
+  
+  // Installation ID
+  installationId: string;
+  
+  // License expiration
+  expirationDate: Date;
+  
+  // Licensed features
+  features: string[];
+  
+  // User limits
+  maxUsers?: number;
+  
+  // Verification
+  isValid: boolean;
+  lastVerified: Date;
+}
+```
+
+## Related Libraries
+
+- **[@bitwarden/admin-console](/libs/admin-console)** - Organization creation and management
+- **[@bitwarden/platform](/libs/platform)** - API communication and state management
+- **[@bitwarden/subscription](/libs/billing)** - Subscription feature access and limits

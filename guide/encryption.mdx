@@ -1,0 +1,369 @@
+---
+title: "Data Encryption"
+description: "How Bitwarden encrypts vault data, including cipher encryption and file attachments"
+---
+
+## Overview
+
+All vault data in Bitwarden is encrypted client-side using symmetric encryption before being sent to the server. This ensures end-to-end encryption where only the user can decrypt their data.
+
+## Encryption Process
+
+### String Encryption
+
+The primary method for encrypting vault data:
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:22
+async encryptString(plainValue: string, key: SymmetricCryptoKey): Promise<EncString> {
+  if (plainValue == null) {
+    return null;
+  }
+  
+  await SdkLoadService.Ready;
+  return new EncString(PureCrypto.symmetric_encrypt_string(plainValue, key.toEncoded()));
+}
+```
+
+**Process:**
+1. Generate random initialization vector (IV)
+2. Encrypt plaintext with AES-256-CBC
+3. Calculate HMAC-SHA256 over IV + ciphertext
+4. Return EncString with type, IV, ciphertext, and MAC
+
+### Decryption Process
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:44
+async decryptString(encString: EncString, key: SymmetricCryptoKey): Promise<string> {
+  if (encString.encryptionType === EncryptionType.AesCbc256_B64) {
+    throw new Error("Decryption of AesCbc256_B64 encrypted data is disabled.");
+  }
+  
+  await SdkLoadService.Ready;
+  return PureCrypto.symmetric_decrypt_string(encString.encryptedString, key.toEncoded());
+}
+```
+
+<Warning>
+AES-CBC-256 without HMAC (type 0) is deprecated and decryption is disabled. All vault data must use authenticated encryption (type 2 or 7).
+</Warning>
+
+**Process:**
+1. Verify HMAC over IV + ciphertext
+2. Decrypt ciphertext with AES-256-CBC using IV
+3. Return plaintext or throw on authentication failure
+
+### Byte Array Encryption
+
+For encrypting binary data:
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:34
+async encryptBytes(plainValue: Uint8Array, key: SymmetricCryptoKey): Promise<EncString> {
+  await SdkLoadService.Ready;
+  return new EncString(PureCrypto.symmetric_encrypt_bytes(plainValue, key.toEncoded()));
+}
+```
+
+## Cipher Encryption
+
+Vault items (passwords, cards, identities, notes) are encrypted as "ciphers":
+
+### Cipher Key Structure
+
+```typescript
+// From libs/key-management/src/abstractions/key.service.ts:335
+abstract cipherDecryptionKeys$(userId: UserId): Observable<CipherDecryptionKeys | null>;
+
+export type CipherDecryptionKeys = {
+  userKey: UserKey;                              // For personal vault items
+  orgKeys: Record<OrganizationId, OrgKey> | null; // For organization vault items
+};
+```
+
+Each cipher is encrypted with either:
+- **User Key**: For items in the personal vault
+- **Organization Key**: For items shared in an organization vault
+
+### Cipher Data Fields
+
+Individual cipher fields are encrypted separately:
+
+```typescript
+// Example cipher structure
+interface Cipher {
+  name: EncString;          // Item name (encrypted)
+  notes: EncString;         // Secure notes (encrypted)
+  login?: {
+    username: EncString;    // Username (encrypted)
+    password: EncString;    // Password (encrypted)
+    totp: EncString;        // TOTP seed (encrypted)
+    uris: Array<{          
+      uri: EncString;       // URI (encrypted)
+    }>;
+  };
+  // ... other types (card, identity, secure note)
+}
+```
+
+<Warning>
+Each field is individually encrypted to enable fine-grained access control and to prevent information leakage through field lengths.
+</Warning>
+
+## File Encryption
+
+File attachments use a dedicated encryption method:
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:39
+async encryptFileData(plainValue: Uint8Array, key: SymmetricCryptoKey): Promise<EncArrayBuffer> {
+  await SdkLoadService.Ready;
+  return new EncArrayBuffer(PureCrypto.symmetric_encrypt_filedata(plainValue, key.toEncoded()));
+}
+```
+
+### File Encryption Process
+
+1. **Generate file key**: Create a unique cipher key for the file
+2. **Encrypt file data**: Use AES-256-CBC + HMAC-SHA256
+3. **Encrypt file key**: Wrap the cipher key with user/org key
+4. **Store both**: Save encrypted file data and encrypted file key
+
+```typescript
+// From libs/key-management/src/key.service.ts:444
+async makeCipherKey(): Promise<CipherKey> {
+  return (await this.keyGenerationService.createKey(512)) as CipherKey;
+}
+```
+
+### File Decryption
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:60
+async decryptFileData(encBuffer: EncArrayBuffer, key: SymmetricCryptoKey): Promise<Uint8Array> {
+  if (encBuffer.encryptionType === EncryptionType.AesCbc256_B64) {
+    throw new Error("Decryption of AesCbc256_B64 encrypted data is disabled.");
+  }
+  
+  await SdkLoadService.Ready;
+  return PureCrypto.symmetric_decrypt_filedata(encBuffer.buffer, key.toEncoded());
+}
+```
+
+**Process:**
+1. Unwrap cipher key using user/org key
+2. Verify HMAC on encrypted file data
+3. Decrypt file data using cipher key
+4. Return plaintext file bytes
+
+## Data Encryption Keys
+
+Organization shared items use data encryption keys:
+
+```typescript
+// From libs/key-management/src/key.service.ts:342
+async makeDataEncKey<T extends OrgKey | UserKey>(
+  key: T,
+): Promise<[SymmetricCryptoKey, EncString]> {
+  // Content encryption key is AES256_CBC_HMAC
+  const cek = await this.keyGenerationService.createKey(512);
+  const wrappedCek = await this.encryptService.wrapSymmetricKey(cek, key);
+  return [cek, wrappedCek];
+}
+```
+
+<Warning>
+`makeDataEncKey` is deprecated for new code. Use cipher-specific keys or file encryption methods instead.
+</Warning>
+
+## Key Wrapping
+
+Symmetric keys are protected by wrapping them with other keys:
+
+### Symmetric Key Wrapping
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:104
+async wrapSymmetricKey(
+  keyToBeWrapped: SymmetricCryptoKey,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<EncString> {
+  await SdkLoadService.Ready;
+  return new EncString(
+    PureCrypto.wrap_symmetric_key(keyToBeWrapped.toEncoded(), wrappingKey.toEncoded()),
+  );
+}
+```
+
+**Usage examples:**
+- User key wrapped with master key
+- Cipher key wrapped with user key
+- Organization key wrapped for sharing
+
+### Asymmetric Key Wrapping
+
+Private keys are wrapped with symmetric keys:
+
+```typescript
+// From libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts:68
+async wrapDecapsulationKey(
+  decapsulationKeyPkcs8: Uint8Array,
+  wrappingKey: SymmetricCryptoKey,
+): Promise<EncString> {
+  await SdkLoadService.Ready;
+  return new EncString(
+    PureCrypto.wrap_decapsulation_key(decapsulationKeyPkcs8, wrappingKey.toEncoded()),
+  );
+}
+```
+
+## Key Encapsulation
+
+For sharing organization keys, asymmetric key encapsulation is used:
+
+```typescript
+// From libs/common/src/key-management/crypto/abstractions/encrypt.service.ts:146
+abstract encapsulateKeyUnsigned(
+  sharedKey: SymmetricCryptoKey,
+  encapsulationKey: Uint8Array,  // Recipient's public key
+): Promise<EncString>;
+```
+
+**Process:**
+1. Generate organization key (symmetric)
+2. Encrypt org key with each member's RSA public key
+3. Store encrypted org keys per member
+4. Each member decrypts with their RSA private key
+
+### Decapsulation
+
+```typescript
+// From libs/common/src/key-management/crypto/abstractions/encrypt.service.ts:159
+abstract decapsulateKeyUnsigned(
+  encryptedSharedKey: EncString,
+  decapsulationKey: Uint8Array,  // User's private key
+): Promise<SymmetricCryptoKey>;
+```
+
+<Warning>
+Key encapsulation is "unsigned" - it doesn't authenticate the sender. Only use for sharing within trusted organization contexts.
+</Warning>
+
+## Encryption Security Properties
+
+### Authenticated Encryption
+
+All modern encryption uses authenticated encryption:
+
+- **AES-256-CBC + HMAC-SHA256**: Encrypt-then-MAC construction
+- **XChaCha20-Poly1305**: Built-in authenticated encryption (AEAD)
+
+**Benefits:**
+- Prevents tampering with ciphertext
+- Protects against padding oracle attacks
+- Ensures data integrity and authenticity
+
+### Initialization Vectors
+
+Every encryption operation uses a unique, random IV:
+
+```typescript
+// IVs are generated internally by the SDK
+// Each encryption gets a fresh CSPRNG IV
+async encryptString(plainValue: string, key: SymmetricCryptoKey): Promise<EncString> {
+  // SDK generates random IV automatically
+  return new EncString(PureCrypto.symmetric_encrypt_string(plainValue, key.toEncoded()));
+}
+```
+
+<Warning>
+Never reuse IVs with the same key. IV reuse can completely break AES-CBC security, allowing attackers to recover plaintext.
+</Warning>
+
+## Symmetric Key Structure
+
+Symmetric keys contain both encryption and authentication components:
+
+```typescript
+// From libs/common/src/platform/models/domain/symmetric-crypto-key.ts:8
+export type Aes256CbcHmacKey = {
+  type: EncryptionType.AesCbc256_HmacSha256_B64;
+  encryptionKey: Uint8Array;      // 32 bytes (256 bits)
+  authenticationKey: Uint8Array;  // 32 bytes (256 bits)
+};
+
+// Constructor splits 64-byte key
+if (key.byteLength === 64) {
+  this.innerKey = {
+    type: EncryptionType.AesCbc256_HmacSha256_B64,
+    encryptionKey: key.slice(0, 32),   // First 32 bytes for AES
+    authenticationKey: key.slice(32),   // Last 32 bytes for HMAC
+  };
+}
+```
+
+## Encryption Performance
+
+The encryption implementation delegates to the Bitwarden SDK for performance:
+
+- **SDK Integration**: All cryptographic operations use optimized SDK implementations
+- **WebAssembly**: SDK runs as WebAssembly for near-native performance
+- **Async Operations**: Encryption is asynchronous to prevent UI blocking
+
+```typescript
+// All encryption waits for SDK to be ready
+await SdkLoadService.Ready;
+return PureCrypto.symmetric_encrypt_string(plainValue, key.toEncoded());
+```
+
+## Error Handling
+
+<Warning>
+Decryption failures should be treated as security-critical errors. Never ignore or suppress decryption exceptions.
+</Warning>
+
+```typescript
+// From libs/common/src/key-management/crypto/abstractions/encrypt.service.ts:46
+/**
+ * @throws IMPORTANT: This throws if decryption fails. If decryption failures are expected to happen,
+ * the callsite should log where the failure occurred, and handle it by domain specific logic (e.g. show a UI error).
+ */
+abstract decryptString(encString: EncString, key: SymmetricCryptoKey): Promise<string>;
+```
+
+**Common decryption failure causes:**
+- Wrong decryption key
+- Corrupted ciphertext
+- MAC verification failure (tampering)
+- Incompatible encryption type
+
+## Best Practices
+
+### For Developers
+
+1. **Always use EncryptService**: Don't implement custom encryption
+2. **Prefer high-level APIs**: Use `encryptString` over low-level primitives
+3. **Validate encryption type**: Check for authenticated encryption
+4. **Handle errors properly**: Don't expose plaintext on decryption failure
+
+### Security Checklist
+
+- [ ] Use authenticated encryption (type 2 or 7)
+- [ ] Generate unique IVs per encryption
+- [ ] Use CSPRNG for all random data
+- [ ] Verify MACs before decryption
+- [ ] Never log or expose plaintext
+- [ ] Clear sensitive data from memory when done
+
+## Related Topics
+
+- [Cryptographic Architecture](/guide/cryptography) - Overall crypto design
+- [Key Management](/guide/key-management) - Key lifecycle and derivation
+- [Vault API](/api/vault/cipher-service) - Vault item encryption
+
+## References
+
+- `libs/common/src/key-management/crypto/services/encrypt.service.implementation.ts` - Encryption implementation
+- `libs/common/src/key-management/crypto/abstractions/encrypt.service.ts` - Encryption interface
+- `libs/common/src/platform/models/domain/symmetric-crypto-key.ts` - Key structure

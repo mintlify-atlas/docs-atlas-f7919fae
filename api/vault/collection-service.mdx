@@ -1,0 +1,539 @@
+---
+title: "Collection Service"
+description: "Service for managing organization collections"
+---
+
+## Overview
+
+The `CollectionService` manages collections within organizations. Collections are organization-level groupings of vault items that allow teams to share and organize ciphers. Unlike folders (which are personal), collections are shared across organization members with specific access permissions.
+
+**Source:** `libs/admin-console/src/common/collections/services/default-collection.service.ts`
+
+## Key Features
+
+- Manage organization collections
+- Encrypt and decrypt collection data
+- Handle collection permissions (read, edit, manage)
+- Transform collections into nested tree structures
+- Group collections by organization
+- Observable-based reactive state management
+
+## Observables
+
+### encryptedCollections$
+
+Observable that emits encrypted collections for a user.
+
+```typescript
+encryptedCollections$(userId: UserId): Observable<Collection[] | null>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get collections for
+
+**Returns:** Observable of encrypted collection objects, or `null` if not loaded
+
+### decryptedCollections$
+
+Observable that emits decrypted collection views for a user.
+
+```typescript
+decryptedCollections$(userId: UserId): Observable<CollectionView[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get collection views for
+
+**Returns:** Observable of decrypted collection views sorted by name
+
+**Example:**
+```typescript
+const collections$ = collectionService.decryptedCollections$(userId);
+collections$.subscribe(collections => {
+  console.log(`User has access to ${collections.length} collections`);
+  collections.forEach(c => {
+    console.log(`- ${c.name} (Org: ${c.organizationId})`);
+  });
+});
+```
+
+### defaultUserCollection$
+
+Observable for the default collection of a user in an organization.
+
+```typescript
+defaultUserCollection$(
+  userId: UserId,
+  orgId: OrganizationId,
+): Observable<CollectionView | undefined>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID
+- `orgId: OrganizationId` - The organization ID
+
+**Returns:** Observable that emits the default collection or undefined
+
+**Example:**
+```typescript
+const defaultCollection$ = collectionService.defaultUserCollection$(userId, orgId);
+defaultCollection$.subscribe(collection => {
+  if (collection) {
+    console.log(`Default collection: ${collection.name}`);
+  }
+});
+```
+
+## Core Methods
+
+### encrypt
+
+Encrypts a collection view for storage.
+
+```typescript
+encrypt(model: CollectionView, userId: UserId): Promise<Collection>
+```
+
+**Parameters:**
+- `model: CollectionView` - The collection view to encrypt
+- `userId: UserId` - The user ID (used to get organization key)
+
+**Returns:** Promise resolving to encrypted collection
+
+**Example:**
+```typescript
+const collectionView = new CollectionView({
+  id: "collection-id",
+  organizationId: "org-id",
+  name: "Engineering Team"
+});
+
+const encrypted = await collectionService.encrypt(collectionView, userId);
+```
+
+### decryptMany$
+
+Decrypts multiple collections using organization keys.
+
+```typescript
+decryptMany$(
+  collections: Collection[],
+  orgKeys: Record<OrganizationId, OrgKey>,
+): Observable<CollectionView[]>
+```
+
+**Parameters:**
+- `collections: Collection[]` - Array of encrypted collections
+- `orgKeys: Record<OrganizationId, OrgKey>` - Map of organization IDs to org keys
+
+**Returns:** Observable of decrypted collection views sorted by name
+
+<Warning>
+This method will soon be made private. Use `decryptedCollections$` observable instead.
+</Warning>
+
+## CRUD Operations
+
+### upsert
+
+Inserts or updates a collection in storage.
+
+```typescript
+upsert(collection: CollectionData, userId: UserId): Promise<any>
+```
+
+**Parameters:**
+- `collection: CollectionData` - The collection data to upsert
+- `userId: UserId` - The user ID
+
+**Behavior:**
+- Updates both encrypted and decrypted state
+- Automatically decrypts the collection using organization key
+- Merges with existing collections
+
+**Example:**
+```typescript
+const collectionData = new CollectionData(response);
+await collectionService.upsert(collectionData, userId);
+```
+
+### replace
+
+Replaces all collections for a user.
+
+```typescript
+replace(
+  collections: { [id: string]: CollectionData },
+  userId: UserId
+): Promise<any>
+```
+
+**Parameters:**
+- `collections: { [id: string]: CollectionData }` - Object mapping collection IDs to collection data
+- `userId: UserId` - The user ID
+
+**Note:** This is typically used during sync operations. It clears decrypted state, forcing re-decryption on next access.
+
+### delete
+
+Deletes one or more collections.
+
+```typescript
+delete(ids: CollectionId[], userId: UserId): Promise<any>
+```
+
+**Parameters:**
+- `ids: CollectionId[]` - Array of collection IDs to delete
+- `userId: UserId` - The user ID
+
+**Behavior:**
+- Removes from both encrypted and decrypted state
+- Does not affect ciphers (they may become unassigned)
+
+**Example:**
+```typescript
+await collectionService.delete(
+  ["collection-1", "collection-2"] as CollectionId[],
+  userId
+);
+```
+
+## Tree Structure Methods
+
+### getAllNested
+
+Transforms collections into a nested tree structure.
+
+```typescript
+getAllNested(collections: CollectionView[]): TreeNode<CollectionView>[]
+```
+
+**Parameters:**
+- `collections: CollectionView[]` - Flat array of collections
+
+**Returns:** Array of tree nodes with nested structure based on collection names
+
+**Nesting Behavior:**
+- Collections are nested based on `/` delimiter in names
+- Example: `"Team/Engineering/Backend"` creates a 3-level tree
+- Collections are grouped by organization first
+
+**Example:**
+```typescript
+const collections = await firstValueFrom(
+  collectionService.decryptedCollections$(userId)
+);
+
+const tree = collectionService.getAllNested(collections);
+
+function printTree(nodes: TreeNode<CollectionView>[], depth = 0) {
+  nodes.forEach(node => {
+    console.log(`${'  '.repeat(depth)}${node.node.name}`);
+    if (node.children) {
+      printTree(node.children, depth + 1);
+    }
+  });
+}
+
+printTree(tree);
+// Output:
+// Engineering
+//   Backend
+//   Frontend
+// Marketing
+```
+
+### getNested
+
+Retrieves a specific collection as a tree node with its hierarchy.
+
+```typescript
+getNested(
+  collections: CollectionView[],
+  id: string
+): TreeNode<CollectionView>
+```
+
+**Parameters:**
+- `collections: CollectionView[]` - Flat array of collections
+- `id: string` - The collection ID to find
+
+**Returns:** Tree node containing the collection and its position in the hierarchy
+
+<Warning>
+Deprecated as of August 30, 2022. Moved to Vault Filter Service. Will be removed when Desktop and Browser are updated.
+</Warning>
+
+### groupByOrganization
+
+Groups collections by their organization ID.
+
+```typescript
+groupByOrganization(
+  collections: CollectionView[]
+): Map<OrganizationId, CollectionView[]>
+```
+
+**Parameters:**
+- `collections: CollectionView[]` - Array of collections to group
+
+**Returns:** Map with organization IDs as keys and arrays of collections as values
+
+**Example:**
+```typescript
+const collections = await firstValueFrom(
+  collectionService.decryptedCollections$(userId)
+);
+
+const grouped = collectionService.groupByOrganization(collections);
+
+grouped.forEach((collections, orgId) => {
+  console.log(`Organization ${orgId}: ${collections.length} collections`);
+});
+```
+
+## Collection Types
+
+### CollectionView
+
+Decrypted collection view with permissions.
+
+```typescript
+class CollectionView {
+  id: CollectionId;
+  organizationId: OrganizationId;
+  externalId?: string;
+  name: string;
+  readOnly: boolean;
+  hidePasswords: boolean;
+  manage: boolean;
+  assigned: boolean;
+  type: CollectionType;
+  defaultUserCollectionEmail?: string;
+
+  // Permission methods
+  canEditItems(org: Organization): boolean;
+  canEdit(org: Organization | undefined): boolean;
+  canDelete(org: Organization | undefined): boolean;
+}
+```
+
+**Properties:**
+- `id: CollectionId` - Unique collection identifier
+- `organizationId: OrganizationId` - Parent organization ID
+- `name: string` - Collection name (supports `/` for nesting)
+- `readOnly: boolean` - If true, items cannot be edited
+- `hidePasswords: boolean` - If true, passwords are hidden from view
+- `manage: boolean` - If true, user can manage the collection
+- `assigned: boolean` - If true, user is directly assigned to collection
+- `type: CollectionType` - Collection type (SharedCollection, DefaultUserCollection, etc.)
+
+**Permission Methods:**
+
+#### canEditItems
+
+Checks if user can edit items within the collection.
+
+```typescript
+canEditItems(org: Organization): boolean
+```
+
+**Returns:** `true` if user can edit items based on:
+- Organization `canEditAllCiphers` permission
+- Collection `manage` permission
+- Collection `assigned` and not `readOnly`
+
+#### canEdit
+
+Checks if user can edit the collection itself (permissions, name, etc.).
+
+```typescript
+canEdit(org: Organization | undefined): boolean
+```
+
+**Returns:** `true` if user has `manage` permission and it's not a default collection
+
+#### canDelete
+
+Checks if user can delete the collection from individual vault.
+
+```typescript
+canDelete(org: Organization | undefined): boolean
+```
+
+**Note:** Does not include admin permissions. See `CollectionAdminView.canDelete` for admin access.
+
+### Collection
+
+Encrypted collection domain object.
+
+```typescript
+class Collection {
+  id: CollectionId;
+  organizationId: OrganizationId;
+  name: EncString;
+  externalId?: string;
+  readOnly: boolean;
+  hidePasswords: boolean;
+
+  static fromCollectionData(data: CollectionData): Collection;
+}
+```
+
+### CollectionData
+
+Raw collection data for storage.
+
+```typescript
+class CollectionData {
+  id: CollectionId;
+  organizationId: OrganizationId;
+  name: string; // Encrypted string representation
+  externalId?: string;
+  readOnly: boolean;
+  hidePasswords: boolean;
+  manage: boolean;
+}
+```
+
+## Collection Types Enum
+
+```typescript
+enum CollectionTypes {
+  SharedCollection = "SharedCollection",
+  DefaultUserCollection = "DefaultUserCollection"
+}
+```
+
+**SharedCollection:** Standard organization collection shared among members
+
+**DefaultUserCollection:** Special collection automatically created for new organization members
+
+## Usage Examples
+
+### Listing User Collections
+
+```typescript
+import { firstValueFrom } from 'rxjs';
+
+// Get all decrypted collections
+const collections = await firstValueFrom(
+  collectionService.decryptedCollections$(userId)
+);
+
+// Filter to specific organization
+const orgCollections = collections.filter(
+  c => c.organizationId === targetOrgId
+);
+
+console.log(`Found ${orgCollections.length} collections`);
+```
+
+### Creating Nested Collection Structure
+
+```typescript
+// Collections with nested names
+const collections = [
+  { name: "Engineering" },
+  { name: "Engineering/Backend" },
+  { name: "Engineering/Frontend" },
+  { name: "Marketing" },
+];
+
+// Get nested tree
+const tree = collectionService.getAllNested(collectionViews);
+
+// Tree structure:
+// - Engineering
+//   - Backend
+//   - Frontend
+// - Marketing
+```
+
+### Checking Collection Permissions
+
+```typescript
+const collection = collections.find(c => c.id === collectionId);
+const org = await organizationService.get(collection.organizationId);
+
+if (collection.canEditItems(org)) {
+  console.log("User can edit items in this collection");
+}
+
+if (collection.canEdit(org)) {
+  console.log("User can edit the collection itself");
+}
+
+if (collection.manage) {
+  console.log("User can manage collection permissions");
+}
+```
+
+### Filtering Collections by Organization
+
+```typescript
+const grouped = collectionService.groupByOrganization(collections);
+
+for (const [orgId, orgCollections] of grouped) {
+  console.log(`\nOrganization: ${orgId}`);
+  orgCollections.forEach(c => {
+    const access = c.readOnly ? "read-only" : "read-write";
+    console.log(`  - ${c.name} (${access})`);
+  });
+}
+```
+
+### Assigning Cipher to Collections
+
+```typescript
+// Get cipher
+const cipher = await cipherService.get(cipherId, userId);
+
+// Assign to collections
+cipher.collectionIds = [collection1Id, collection2Id];
+
+// Save collections
+await cipherService.saveCollectionsWithServer(cipher, userId);
+```
+
+## Implementation Notes
+
+### Nesting Delimiter
+
+The service uses `/` as the nesting delimiter:
+
+```typescript
+const NestingDelimiter = "/";
+```
+
+Collection names like `"Parent/Child/Grandchild"` create a 3-level hierarchy.
+
+### Observable Caching
+
+The service caches decrypted collection observables per user:
+
+```typescript
+private collectionViewCache = new Map<UserId, Observable<CollectionView[]>>();
+```
+
+This prevents redundant decryption operations.
+
+### Automatic Decryption
+
+When accessing `decryptedCollections$`, the service:
+1. Checks if decrypted state exists
+2. If not, fetches encrypted collections and org keys
+3. Decrypts all collections with appropriate org keys
+4. Caches the result
+5. Emits sorted collection views
+
+## Related Services
+
+- [Cipher Service](/api/vault/cipher-service) - Manages items that can be assigned to collections
+- [Folder Service](/api/vault/folder-service) - Personal organization (vs. org collections)
+- Organization Service - Manages organization data and permissions
+
+## See Also
+
+- Collection Admin Service - Extended permissions for organization admins
+- Vault Filter Service - Filtering and searching across collections

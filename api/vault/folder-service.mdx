@@ -1,0 +1,437 @@
+---
+title: "Folder Service"
+description: "Service for organizing vault items into folders"
+---
+
+## Overview
+
+The `FolderService` manages folder organization for vault items. Folders provide a way to categorize and organize ciphers within a user's personal vault.
+
+**Source:** `libs/common/src/vault/services/folder/folder.service.ts`
+
+## Key Features
+
+- Create, read, update, and delete folders
+- Encrypt and decrypt folder data
+- Observable-based folder state management
+- Automatic "None" folder for unorganized items
+- Key rotation support
+
+## Observables
+
+### folders$
+
+Observable that emits encrypted folders for a user.
+
+```typescript
+folders$(userId: UserId): Observable<Folder[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get folders for
+
+**Returns:** Observable of encrypted folder domain objects
+
+**Example:**
+```typescript
+const folders$ = folderService.folders$(userId);
+folders$.subscribe(folders => {
+  console.log(`User has ${folders.length} folders`);
+});
+```
+
+### folderViews$
+
+Observable that emits decrypted folder views for a user.
+
+```typescript
+folderViews$(userId: UserId): Observable<FolderView[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID to get folder views for
+
+**Returns:** Observable of decrypted folder views, includes automatic "None" folder
+
+**Example:**
+```typescript
+const folderViews$ = folderService.folderViews$(userId);
+folderViews$.subscribe(folders => {
+  folders.forEach(folder => {
+    console.log(`Folder: ${folder.name}`);
+  });
+});
+```
+
+### getDecrypted$
+
+Observable for a single decrypted folder by ID.
+
+```typescript
+getDecrypted$(id: string, userId: UserId): Observable<FolderView | undefined>
+```
+
+**Parameters:**
+- `id: string` - The folder ID
+- `userId: UserId` - The user ID
+
+**Returns:** Observable that emits the folder view or undefined if not found
+
+## Core Methods
+
+### encrypt
+
+Encrypts a folder view for storage.
+
+```typescript
+encrypt(model: FolderView, key: SymmetricCryptoKey): Promise<Folder>
+```
+
+**Parameters:**
+- `model: FolderView` - The folder view to encrypt
+- `key: SymmetricCryptoKey` - The encryption key (typically user key)
+
+**Returns:** Promise resolving to encrypted folder
+
+**Example:**
+```typescript
+const folderView = new FolderView();
+folderView.name = "Work Accounts";
+
+const userKey = await keyService.getUserKey(userId);
+const encrypted = await folderService.encrypt(folderView, userKey);
+```
+
+### get
+
+Retrieves a single encrypted folder by ID.
+
+```typescript
+get(id: string, userId: UserId): Promise<Folder>
+```
+
+**Parameters:**
+- `id: string` - The folder ID
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to the folder, or `undefined` if not found
+
+### getAllFromState
+
+Retrieves all folders from state.
+
+```typescript
+getAllFromState(userId: UserId): Promise<Folder[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to array of all folders
+
+### getAllDecryptedFromState
+
+Retrieves all decrypted folders from state.
+
+```typescript
+getAllDecryptedFromState(userId: UserId): Promise<FolderView[]>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to array of decrypted folder views
+
+<Warning>
+This method is deprecated and only recommended for CLI usage. Use `folderViews$` observable instead for reactive updates.
+</Warning>
+
+## CRUD Operations
+
+### upsert
+
+Inserts or updates folder data in storage.
+
+```typescript
+upsert(folderData: FolderData | FolderData[], userId: UserId): Promise<void>
+```
+
+**Parameters:**
+- `folderData: FolderData | FolderData[]` - Single folder or array of folders to upsert
+- `userId: UserId` - The user ID
+
+**Example:**
+```typescript
+const folderData = new FolderData();
+folderData.id = "folder-id-123";
+folderData.name = encryptedName;
+folderData.revisionDate = new Date().toISOString();
+
+await folderService.upsert(folderData, userId);
+```
+
+### replace
+
+Replaces all folders for a user.
+
+```typescript
+replace(folders: { [id: string]: FolderData }, userId: UserId): Promise<void>
+```
+
+**Parameters:**
+- `folders: { [id: string]: FolderData }` - Object mapping folder IDs to folder data
+- `userId: UserId` - The user ID
+
+**Note:** This is typically used during sync operations to replace all local folder data.
+
+### delete
+
+Deletes one or more folders.
+
+```typescript
+delete(id: string | string[], userId: UserId): Promise<any>
+```
+
+**Parameters:**
+- `id: string | string[]` - Folder ID or array of folder IDs to delete
+- `userId: UserId` - The user ID
+
+**Behavior:**
+- Deletes the folder from storage
+- Automatically reassigns ciphers in the deleted folder to "No Folder"
+- Updates cipher data to set `folderId` to `null`
+
+**Example:**
+```typescript
+// Delete a single folder
+await folderService.delete("folder-id-123", userId);
+
+// Delete multiple folders
+await folderService.delete(["folder-1", "folder-2"], userId);
+```
+
+### clear
+
+Clears all folder data for a user.
+
+```typescript
+clear(userId: UserId): Promise<void>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID
+
+**Note:** This is typically called during logout or account switching.
+
+## Key Rotation
+
+### getRotatedData
+
+Generates re-encrypted folder data for key rotation.
+
+```typescript
+getRotatedData(
+  originalUserKey: UserKey,
+  newUserKey: UserKey,
+  userId: UserId,
+): Promise<FolderWithIdRequest[]>
+```
+
+**Parameters:**
+- `originalUserKey: UserKey` - The original user key (not currently used in implementation)
+- `newUserKey: UserKey` - The new user key to encrypt with
+- `userId: UserId` - The user ID
+
+**Returns:** Promise resolving to array of re-encrypted folders for server update
+
+**Example:**
+```typescript
+const rotatedFolders = await folderService.getRotatedData(
+  oldUserKey,
+  newUserKey,
+  userId
+);
+
+// Send rotated data to server
+await apiService.postUserKeyUpdate({
+  folders: rotatedFolders,
+  // ... other rotated data
+});
+```
+
+## Cache Management
+
+### clearDecryptedFolderState
+
+Clears the decrypted folder cache.
+
+```typescript
+clearDecryptedFolderState(userId: UserId): Promise<void>
+```
+
+**Parameters:**
+- `userId: UserId` - The user ID
+
+**Note:** This forces folders to be decrypted again on next access. Called automatically during upsert operations.
+
+## Folder Structure
+
+### FolderView
+
+Decrypted folder view object.
+
+```typescript
+class FolderView {
+  id: string;
+  name: string;
+  revisionDate: Date;
+}
+```
+
+**Properties:**
+- `id: string` - Unique folder identifier
+- `name: string` - Decrypted folder name
+- `revisionDate: Date` - Last modification date
+
+### Folder
+
+Encrypted folder domain object.
+
+```typescript
+class Folder {
+  id: string;
+  name: EncString;
+  revisionDate: Date;
+}
+```
+
+**Properties:**
+- `id: string` - Unique folder identifier
+- `name: EncString` - Encrypted folder name
+- `revisionDate: Date` - Last modification date
+
+### FolderData
+
+Raw folder data for storage.
+
+```typescript
+class FolderData {
+  id: string;
+  name: string; // Encrypted string representation
+  revisionDate: string;
+}
+```
+
+## Special Folders
+
+### None Folder
+
+The service automatically adds a "None" folder to the folder list:
+
+```typescript
+const noneFolder = new FolderView();
+noneFolder.name = this.i18nService.t("noneFolder");
+// Automatically appended to folder list
+```
+
+**Characteristics:**
+- No ID (used for ciphers with `folderId === null`)
+- Localized name from i18n service
+- Always appears in folder lists
+- Cannot be deleted or modified
+- Represents unorganized items
+
+## Usage Examples
+
+### Creating a New Folder
+
+```typescript
+import { FolderView } from '@bitwarden/common/vault/models/view/folder.view';
+import { FolderData } from '@bitwarden/common/vault/models/data/folder.data';
+
+// Create folder view
+const folderView = new FolderView();
+folderView.name = "Personal Accounts";
+
+// Encrypt the folder
+const userKey = await keyService.getUserKey(userId);
+const encrypted = await folderService.encrypt(folderView, userKey);
+
+// Save to storage
+const folderData = encrypted.toFolderData();
+await folderService.upsert(folderData, userId);
+```
+
+### Listing All Folders
+
+```typescript
+// Using observable (recommended)
+folderService.folderViews$(userId).subscribe(folders => {
+  folders.forEach(folder => {
+    console.log(`${folder.id}: ${folder.name}`);
+  });
+});
+
+// Using promise (CLI/scripts)
+const folders = await folderService.getAllDecryptedFromState(userId);
+folders.forEach(folder => {
+  console.log(`${folder.id}: ${folder.name}`);
+});
+```
+
+### Moving Cipher to Folder
+
+```typescript
+// Get the cipher
+const cipher = await cipherService.get(cipherId, userId);
+
+// Update folder assignment
+cipher.folderId = targetFolderId;
+
+// Save changes
+await cipherService.upsert(cipher.toCipherData(), userId);
+```
+
+### Deleting a Folder
+
+```typescript
+// Delete folder (ciphers automatically moved to "None")
+await folderService.delete(folderId, userId);
+
+// Verify ciphers were reassigned
+const ciphers = await cipherService.getAllDecryptedForGrouping(
+  null, // null = "None" folder
+  userId,
+  true // folder = true
+);
+console.log(`${ciphers.length} items moved to None folder`);
+```
+
+## Implementation Notes
+
+### Observable Caching
+
+The service maintains a cache of folder view observables to prevent duplicate decryption:
+
+```typescript
+private folderViewCache = new Map<UserId, Observable<FolderView[]>>();
+```
+
+### Force Emission
+
+The service uses subjects to force emission of empty arrays during cleanup:
+
+```typescript
+private forceFolderViews: Record<UserId, Subject<FolderView[]>> = {};
+```
+
+This ensures that subscribers receive updates when folder data is cleared.
+
+## Related Services
+
+- [Cipher Service](/api/vault/cipher-service) - Manages vault items that can be organized in folders
+- Key Service - Provides encryption keys for folder encryption
+
+## See Also
+
+- [Collection Service](/api/vault/collection-service) - Organization-level grouping (vs. personal folders)

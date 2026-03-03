@@ -1,0 +1,562 @@
+---
+title: Export
+description: Vault import/export library for Bitwarden Clients
+---
+
+The Export library (`libs/tools/export`) provides comprehensive vault export functionality for Bitwarden. This library enables users and organizations to export their vault data in various formats for backup, migration, or compliance purposes.
+
+## Overview
+
+The Export library is organized under `vault-export` and contains two main packages:
+
+- **@bitwarden/vault-export-core** - Core export logic, types, and services
+- **@bitwarden/vault-export-ui** - Angular UI components for vault export
+
+The library is used across all Bitwarden client applications:
+- Web Vault
+- Desktop Application
+- Browser Extension
+- CLI
+
+## Architecture
+
+The export library follows a service-oriented architecture with separate implementations for individual vaults and organization vaults.
+
+### Core Services
+
+Located in `libs/tools/export/vault-export/vault-export-core/src/services/`
+
+#### VaultExportServiceAbstraction
+
+**File:** `vault-export.service.abstraction.ts`
+
+Main service interface for vault exports.
+
+**Methods:**
+
+```typescript
+abstract class VaultExportServiceAbstraction {
+  // Export individual vault
+  abstract getExport(
+    userId: UserId,
+    format: ExportFormat,
+    password: string,
+  ): Promise<ExportedVault>;
+
+  // Export organization vault
+  abstract getOrganizationExport(
+    userId: UserId,
+    organizationId: OrganizationId,
+    format: ExportFormat,
+    password: string,
+    onlyManagedCollections?: boolean,
+  ): Promise<ExportedVault>;
+
+  // Get available export formats
+  abstract formats$(options: FormatOptions): Observable<ExportFormatMetadata[]>;
+}
+```
+
+#### IndividualVaultExportService
+
+**File:** `individual-vault-export.service.ts`
+
+Handles exports for individual user vaults, including ciphers, folders, and attachments.
+
+**Key Methods:**
+
+```typescript
+class IndividualVaultExportService {
+  // Export vault in specified format
+  async getExport(
+    userId: UserId,
+    format: ExportFormat
+  ): Promise<ExportedVault>
+
+  // Export with password protection (encrypted JSON)
+  async getPasswordProtectedExport(
+    userId: UserId,
+    password: string
+  ): Promise<ExportedVault>
+}
+```
+
+**Implementation Details:**
+
+The service extends `BaseVaultExportService` and handles:
+- Folder decryption and export
+- Cipher decryption and export
+- Attachment handling
+- Format conversion (CSV, JSON, encrypted JSON)
+
+**Constructor Dependencies:**
+
+```typescript
+constructor(
+  private folderService: FolderService,
+  private cipherService: CipherService,
+  keyGenerationService: KeyGenerationService,
+  private keyService: KeyService,
+  encryptService: EncryptService,
+  cryptoFunctionService: CryptoFunctionService,
+  kdfConfigService: KdfConfigService,
+  private apiService: ApiService,
+  restrictedItemTypesService: RestrictedItemTypesService,
+)
+```
+
+## Export Formats
+
+The library supports four export formats:
+
+### CSV Format
+
+**Format:** `"csv"`
+
+Exports vault data as comma-separated values. Suitable for spreadsheet applications and basic backups.
+
+**Includes:**
+- Folders
+- Logins
+- Cards
+- Identities
+- Secure notes
+
+**Limitations:**
+- No attachments
+- No custom fields (in some cases)
+- Limited metadata
+
+**Example:**
+
+```csv
+folder,favorite,type,name,notes,fields,login_uri,login_username,login_password
+Social,1,login,Twitter,My Twitter account,,https://twitter.com,user@example.com,password123
+Work,0,login,Company Portal,,,https://portal.company.com,john.doe@company.com,SecurePass456
+```
+
+### JSON Format
+
+**Format:** `"json"`
+
+Exports vault data as unencrypted JSON. Contains complete vault structure with all metadata.
+
+**Includes:**
+- All cipher data
+- Folders and collections
+- Custom fields
+- Attachments (metadata only)
+- Full metadata (creation dates, revision dates, etc.)
+
+**Example Structure:**
+
+```json
+{
+  "encrypted": false,
+  "folders": [
+    {
+      "id": "folder-id-123",
+      "name": "Social Media"
+    }
+  ],
+  "items": [
+    {
+      "id": "item-id-456",
+      "folderId": "folder-id-123",
+      "type": 1,
+      "name": "Twitter",
+      "notes": "My Twitter account",
+      "favorite": true,
+      "login": {
+        "username": "user@example.com",
+        "password": "password123",
+        "uris": [
+          {
+            "uri": "https://twitter.com",
+            "match": null
+          }
+        ]
+      },
+      "fields": [],
+      "revisionDate": "2024-03-03T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Encrypted JSON Format
+
+**Format:** `"encrypted_json"`
+
+Exports vault data as password-protected, encrypted JSON. Most secure export option.
+
+**Features:**
+- Password-based encryption
+- Complete vault data
+- Maintains encryption at rest
+- Suitable for secure backups
+
+**Security:**
+- Uses account's KDF settings (PBKDF2, Argon2)
+- Generates unique encryption key from password
+- All sensitive data remains encrypted
+
+**Example Structure:**
+
+```json
+{
+  "encrypted": true,
+  "passwordProtected": true,
+  "salt": "base64-encoded-salt",
+  "kdfIterations": 600000,
+  "kdfType": 0,
+  "encKeyValidation_DO_NOT_EDIT": "encrypted-validation-string",
+  "data": "encrypted-vault-data-base64"
+}
+```
+
+### ZIP Format
+
+**Format:** `"zip"`
+
+Exports vault as a ZIP archive containing JSON export plus attachments.
+
+**Includes:**
+- JSON vault export
+- All cipher attachments
+- Folder structure for attachments
+
+**Use Cases:**
+- Complete backup with files
+- Migration with attachments
+- Archival purposes
+
+## Export Types
+
+Located in `libs/tools/export/vault-export/vault-export-core/src/types/`
+
+### ExportedVault
+
+Union type representing any exported vault format:
+
+```typescript
+type ExportedVault = ExportedVaultAsString | ExportedVaultAsBlob;
+
+type ExportedVaultAsString = {
+  type: "string";
+  data: string;
+};
+
+type ExportedVaultAsBlob = {
+  type: "blob";
+  data: Blob;
+};
+```
+
+### BitwardenUnEncryptedIndividualJsonExport
+
+Structure for unencrypted JSON exports:
+
+```typescript
+interface BitwardenUnEncryptedIndividualJsonExport {
+  encrypted: false;
+  folders: FolderWithIdExport[];
+  items: CipherWithIdExport[];
+}
+```
+
+### BitwardenEncryptedIndividualJsonExport
+
+Structure for encrypted JSON exports:
+
+```typescript
+interface BitwardenEncryptedIndividualJsonExport {
+  encrypted: true;
+  passwordProtected: true;
+  salt: string;
+  kdfIterations: number;
+  kdfType: KdfType;
+  kdfMemory?: number;
+  kdfParallelism?: number;
+  encKeyValidation_DO_NOT_EDIT: string;
+  data: string;
+}
+```
+
+## Usage Examples
+
+### Export Individual Vault as JSON
+
+```typescript
+import { 
+  IndividualVaultExportService,
+  ExportFormat 
+} from '@bitwarden/vault-export-core';
+import { UserId } from '@bitwarden/common/types/guid';
+
+class VaultBackupService {
+  constructor(
+    private exportService: IndividualVaultExportService
+  ) {}
+
+  async exportVault(userId: UserId) {
+    const exported = await this.exportService.getExport(
+      userId,
+      "json" as ExportFormat
+    );
+
+    if (exported.type === "string") {
+      // Save to file
+      const blob = new Blob([exported.data], { 
+        type: 'application/json' 
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bitwarden_export_${Date.now()}.json`;
+      a.click();
+    }
+  }
+}
+```
+
+### Export with Password Protection
+
+```typescript
+async exportEncrypted(userId: UserId, password: string) {
+  const exported = await this.exportService.getPasswordProtectedExport(
+    userId,
+    password
+  );
+
+  if (exported.type === "string") {
+    const blob = new Blob([exported.data], { 
+      type: 'application/json' 
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bitwarden_encrypted_export_${Date.now()}.json`;
+    a.click();
+  }
+}
+```
+
+### Export Organization Vault
+
+```typescript
+import { 
+  VaultExportServiceAbstraction,
+  ExportFormat 
+} from '@bitwarden/vault-export-core';
+import { OrganizationId } from '@bitwarden/common/types/guid';
+
+class OrgExportService {
+  constructor(
+    private exportService: VaultExportServiceAbstraction
+  ) {}
+
+  async exportOrgVault(
+    userId: UserId,
+    orgId: OrganizationId,
+    format: ExportFormat = "json",
+    password?: string,
+    onlyManaged: boolean = false
+  ) {
+    const exported = await this.exportService.getOrganizationExport(
+      userId,
+      orgId,
+      format,
+      password || "",
+      onlyManaged
+    );
+
+    return exported;
+  }
+}
+```
+
+### Get Available Export Formats
+
+```typescript
+import { FormatOptions } from '@bitwarden/vault-export-core';
+
+async getFormats(isMyVault: boolean) {
+  const formats$ = this.exportService.formats$({
+    isMyVault: isMyVault
+  });
+
+  const formats = await firstValueFrom(formats$);
+  // Returns:
+  // [
+  //   { name: ".json", format: "json" },
+  //   { name: ".csv", format: "csv" },
+  //   { name: ".json (Encrypted)", format: "encrypted_json" },
+  //   { name: ".zip", format: "zip" }
+  // ]
+  
+  return formats;
+}
+```
+
+## Export Helpers
+
+### ExportHelper
+
+**File:** `export-helper.ts`
+
+Utility class for common export operations:
+
+- CSV generation using PapaParse
+- JSON formatting
+- ZIP archive creation using JSZip
+- File attachment handling
+- Data sanitization
+
+## Security Considerations
+
+### Unencrypted Exports
+
+**Formats:** CSV, JSON
+
+- Data is exported in plain text
+- No encryption at rest
+- Should be stored securely
+- Recommended for immediate import only
+- Delete after use
+
+### Encrypted Exports
+
+**Format:** Encrypted JSON
+
+- Password-based encryption
+- Uses user's KDF settings
+- Secure for long-term storage
+- Requires password to import
+- Resistant to brute force attacks
+
+### Best Practices
+
+1. **Use encrypted exports** for backups
+2. **Use strong passwords** for encrypted exports
+3. **Store exports securely** (encrypted drives, secure cloud storage)
+4. **Delete unencrypted exports** after immediate use
+5. **Verify exports** before deleting vault data
+6. **Limit export access** in organizations
+
+## Export Restrictions
+
+### Organization Policies
+
+Organizations can restrict exports:
+
+- Disable personal vault export
+- Disable organization vault export
+- Require password-protected exports
+- Audit export activities
+
+### User Permissions
+
+Export permissions vary by role:
+
+- **Owner/Admin** - Full export access
+- **User** - Personal vault only
+- **Custom roles** - Configurable permissions
+
+## Integration Example
+
+**Complete Export Workflow:**
+
+```typescript
+import { Component } from '@angular/core';
+import { 
+  IndividualVaultExportService,
+  ExportFormat,
+  ExportFormatMetadata 
+} from '@bitwarden/vault-export-core';
+import { AccountService } from '@bitwarden/common/auth/abstractions/account.service';
+import { firstValueFrom } from 'rxjs';
+
+@Component({
+  selector: 'app-vault-export',
+  templateUrl: './vault-export.component.html'
+})
+export class VaultExportComponent {
+  formats: ExportFormatMetadata[] = [];
+  selectedFormat: ExportFormat = "json";
+  password: string = "";
+
+  constructor(
+    private exportService: IndividualVaultExportService,
+    private accountService: AccountService
+  ) {}
+
+  async ngOnInit() {
+    // Load available formats
+    this.formats = await firstValueFrom(
+      this.exportService.formats$({ isMyVault: true })
+    );
+  }
+
+  async exportVault() {
+    const account = await firstValueFrom(
+      this.accountService.activeAccount$
+    );
+
+    let exported;
+    if (this.selectedFormat === "encrypted_json") {
+      // Use password protection
+      exported = await this.exportService.getPasswordProtectedExport(
+        account.id,
+        this.password
+      );
+    } else {
+      // Regular export
+      exported = await this.exportService.getExport(
+        account.id,
+        this.selectedFormat
+      );
+    }
+
+    // Download the export
+    this.downloadExport(exported);
+  }
+
+  private downloadExport(exported: ExportedVault) {
+    const filename = `bitwarden_export_${Date.now()}`;
+    let blob: Blob;
+
+    if (exported.type === "string") {
+      blob = new Blob([exported.data], { 
+        type: this.selectedFormat === "csv" 
+          ? 'text/csv' 
+          : 'application/json' 
+      });
+    } else {
+      blob = exported.data;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.${this.getFileExtension()}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private getFileExtension(): string {
+    switch (this.selectedFormat) {
+      case "csv": return "csv";
+      case "json": return "json";
+      case "encrypted_json": return "json";
+      case "zip": return "zip";
+      default: return "json";
+    }
+  }
+}
+```
+
+## Related
+
+- [Generator Library](/libs/tools/generator) - Password and credential generation
+- [Send Library](/libs/tools/send) - Secure sharing functionality

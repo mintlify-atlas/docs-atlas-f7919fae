@@ -1,0 +1,275 @@
+---
+title: Platform Library
+description: Core platform library providing foundational abstractions and services for Bitwarden clients
+---
+
+# Platform Library
+
+The `@bitwarden/platform` library represents the public API of the Platform team at Bitwarden. It provides foundational services, abstractions, and utilities used across all Bitwarden JavaScript projects.
+
+## Overview
+
+The platform library serves as the foundation for:
+
+- **Storage abstractions** - Unified interfaces for disk and memory storage
+- **Messaging services** - Cross-component communication infrastructure
+- **Crypto services** - Cryptographic operations and key management
+- **Background sync** - Scheduled synchronization capabilities
+- **Browser utilities** - Platform detection and browser-specific functionality
+
+## Installation
+
+```bash
+import { BackgroundSyncService, isBrowserSafariApi } from "@bitwarden/platform";
+```
+
+## Key Components
+
+### Background Sync Service
+
+The `BackgroundSyncService` manages periodic background synchronization for browser extensions.
+
+**Location:** `libs/platform/src/background-sync/background-sync.service.ts`
+
+```typescript
+import { BackgroundSyncService, DEFAULT_SYNC_INTERVAL_MS } from "@bitwarden/platform";
+
+// Initialize the service
+const backgroundSync = new BackgroundSyncService(taskSchedulerService);
+
+// Register a sync callback
+backgroundSync.register(async () => {
+  await performSync();
+});
+
+// Start background sync (default: 5 minutes)
+backgroundSync.init(DEFAULT_SYNC_INTERVAL_MS);
+
+// Custom interval (10 minutes)
+backgroundSync.init(600000);
+```
+
+**Key Features:**
+- Configurable sync intervals (default: 5 minutes / 300,000ms)
+- Integration with task scheduler infrastructure
+- Automatic task registration and management
+
+### Browser Detection
+
+Utilities for detecting browser-specific environments.
+
+**Location:** `libs/platform/src/services/browser-service.ts`
+
+```typescript
+import { isBrowserSafariApi } from "@bitwarden/platform";
+
+if (isBrowserSafariApi()) {
+  // Safari-specific logic
+  console.log("Running in Safari");
+}
+```
+
+## Platform Abstractions
+
+The platform library works closely with abstractions defined in `libs/common/src/platform/abstractions/`:
+
+### Storage Service
+
+**Location:** `libs/common/src/platform/abstractions/storage.service.ts`
+
+Provides unified storage interfaces:
+
+```typescript
+import { 
+  ObservableStorageService, 
+  AbstractStorageService,
+  StorageUpdate,
+  StorageUpdateType 
+} from "@bitwarden/common/platform/abstractions";
+```
+
+Key abstractions from `@bitwarden/storage-core`:
+- `ObservableStorageService` - Storage with observable updates
+- `AbstractStorageService` - Base storage interface
+- `StorageUpdate` - Storage update events
+- `StorageUpdateType` - Types of storage updates
+
+### Messaging Service
+
+**Location:** `libs/common/src/platform/abstractions/messaging.service.ts`
+
+Enables cross-component messaging:
+
+```typescript
+import { MessagingService } from "@bitwarden/common/platform/abstractions";
+
+// MessagingService is aliased to MessageSender from @bitwarden/messaging
+```
+
+### Common Platform Services
+
+Additional platform abstractions include:
+
+- **App ID Service** - Application identifier management
+- **Broadcaster Service** - Event broadcasting system
+- **Config Service** - Configuration management
+- **Environment Service** - Environment detection and settings
+- **I18n Service** - Internationalization support
+- **Log Service** - Logging infrastructure
+- **Platform Utils Service** - Cross-platform utilities
+- **System Service** - System-level operations
+- **Translation Service** - Text translation
+- **Validation Service** - Data validation
+
+## Platform Services
+
+Service implementations are located in `libs/common/src/platform/services/`:
+
+### Core Services
+
+- **App ID Service** (`app-id.service.ts`) - Manages application identifiers
+- **Console Log Service** (`console-log.service.ts`) - Console logging implementation
+- **Default Broadcaster Service** (`default-broadcaster.service.ts`) - Event broadcasting
+- **Default Environment Service** (`default-environment.service.ts`) - Environment management
+- **Container Service** (`container.service.ts`) - Dependency injection container
+
+### Configuration Services
+
+**Location:** `libs/common/src/platform/services/config/`
+
+- **Config API Service** (`config-api.service.ts`) - Server configuration API
+- **Default Config Service** (`default-config.service.ts`) - Configuration management
+
+### FIDO2 Services
+
+**Location:** `libs/common/src/platform/services/fido2/`
+
+- **FIDO2 Authenticator Service** - WebAuthn authenticator
+- **FIDO2 Client Service** - WebAuthn client implementation
+
+## Platform Utilities
+
+### Misc Utilities
+
+**Location:** `libs/common/src/platform/misc/`
+
+Utility functions for common operations:
+
+- **Compare Values** (`compare-values.ts`) - Value comparison utilities
+- **Convert Values** (`convert-values.ts`) - Type conversion helpers
+- **Flags** (`flags.ts`) - Feature flag management
+- **Lazy** (`lazy.ts`) - Lazy initialization patterns
+- **Range with Default** (`range-with-default.ts`) - Range validation
+- **RxJS Operators** (`rxjs-operators.ts`) - Custom RxJS operators
+- **Safe URLs** (`safe-urls.ts`) - URL sanitization
+- **Utils** (`utils.ts`) - General utility functions
+
+## Storage Architecture
+
+The platform library integrates with the storage system through `@bitwarden/storage-core`:
+
+### Storage Locations
+
+```typescript
+import { 
+  StorageLocation,
+  HtmlStorageLocation,
+  ClientLocations 
+} from "@bitwarden/storage-core";
+```
+
+**Storage Types:**
+- **Disk Storage** - Persistent storage (local/session storage on web)
+- **Memory Storage** - In-memory cache
+- **Client-Specific** - Platform-specific storage locations
+
+### Storage Services
+
+**Location:** `libs/storage-core/src/`
+
+- **Memory Storage Service** (`memory-storage.service.ts`) - In-memory storage
+- **Serialized Memory Storage** (`serialized-memory-storage.service.ts`) - JSON-serialized memory storage
+- **Storage Service Provider** (`storage-service.provider.ts`) - Storage service factory
+
+## Integration with State Management
+
+The platform library provides storage abstractions used by the state management system:
+
+```typescript
+// Platform provides storage abstractions
+import { AbstractStorageService } from "@bitwarden/common/platform/abstractions";
+
+// State management uses these abstractions
+import { StateProvider } from "@bitwarden/state";
+```
+
+See [State Management](/libs/state-management) for details on state provider usage.
+
+## Scheduling and Background Tasks
+
+**Location:** `libs/common/src/platform/scheduling/`
+
+The platform includes task scheduling infrastructure:
+
+- **Task Scheduler Service** - Manages scheduled tasks
+- **Scheduled Task Names** - Predefined task identifiers
+- Background sync integration
+
+## IPC (Inter-Process Communication)
+
+**Location:** `libs/common/src/platform/ipc/`
+
+Provides IPC mechanisms for desktop applications:
+
+- Process communication
+- Message passing between main and renderer processes
+
+## Best Practices
+
+### Storage Usage
+
+1. **Use appropriate storage locations:**
+   - `disk` for persistent data
+   - `memory` for temporary/cached data
+   - Client-specific locations when needed (e.g., `disk-local` for web)
+
+2. **Leverage storage abstractions:**
+   - Use `ObservableStorageService` for reactive storage updates
+   - Subscribe to storage change events when needed
+
+### Background Sync
+
+1. **Set appropriate intervals:**
+   - Default 5 minutes is suitable for most cases
+   - Consider longer intervals for battery-sensitive operations
+   - Minimum interval enforced: 1ms (falls back to default)
+
+2. **Handle sync failures gracefully:**
+   - Implement error handling in sync callbacks
+   - Log sync failures for debugging
+
+### Messaging
+
+1. **Use MessageSender for events:**
+   - Prefer `MessageSender` over state for event notifications
+   - State observables don't guarantee emissions for equal values
+
+## Related Libraries
+
+- [State Management](/libs/state-management) - State provider framework
+- [Components](/libs/components) - UI component library
+- `@bitwarden/storage-core` - Storage core implementations
+- `@bitwarden/messaging` - Messaging infrastructure
+
+## Source Code
+
+- **Platform Library:** `libs/platform/`
+- **Platform Abstractions:** `libs/common/src/platform/abstractions/`
+- **Platform Services:** `libs/common/src/platform/services/`
+- **Storage Core:** `libs/storage-core/`
+
+## Additional Resources
+
+- [Architecture Overview](/development#architecture)
+- [Development Guide](/development)
+- [Contributing Guidelines](/contributing)

@@ -1,0 +1,138 @@
+---
+title: Browser Extension Overview
+description: Overview of the Bitwarden browser extension architecture and supported platforms
+---
+
+The Bitwarden browser extension is a cross-platform password manager built using the Web Extension API and Angular. It provides secure password management, autofill capabilities, and vault access directly from the browser.
+
+## Supported Browsers
+
+The extension supports all major browsers:
+
+- **Chrome** - Chrome Web Store
+- **Firefox** - Firefox Add-ons
+- **Safari** - App Store (macOS)
+- **Edge** - Microsoft Edge Add-ons
+- **Opera** - Opera Add-ons
+- **Vivaldi** - Chrome Web Store compatible
+- **Brave** - Chrome Web Store compatible
+
+## Manifest V3
+
+The browser extension uses **Web Extension API Manifest V3**, the latest extension platform standard. Manifest V3 brings significant architectural changes:
+
+### Key Changes from Manifest V2
+
+- **Service Workers** replace persistent background pages
+- Background context can be terminated at any time by the browser
+- Enhanced security and privacy controls
+- Improved extension performance
+
+See [Manifest V3 Migration](/apps/browser/manifest-v3) for detailed information about the differences and migration.
+
+## Architecture
+
+The extension is organized into distinct execution contexts:
+
+### Execution Contexts
+
+- **Background Service Worker** (`src/platform/background.ts`) - Handles core business logic, API calls, and vault operations
+- **Popup** (`src/popup/`) - The main UI shown when clicking the extension icon
+- **Content Scripts** (`src/autofill/`) - Injected into web pages for autofill and form detection
+- **Offscreen Documents** - Used for clipboard operations in Manifest V3
+
+### Cross-Browser Compatibility
+
+The codebase uses the `BrowserApi` abstraction layer (`src/platform/browser/browser-api.ts`) to handle browser-specific differences:
+
+```typescript
+// Never use chrome.* or browser.* APIs directly
+// ❌ Bad
+chrome.tabs.query({ active: true }, callback);
+
+// ✅ Good - Use BrowserApi abstraction
+await BrowserApi.tabsQuery({ active: true });
+```
+
+This abstraction ensures compatibility across Chrome, Firefox, Safari, Opera, and other Chromium-based browsers.
+
+## Source Code Structure
+
+```
+apps/browser/
+├── src/
+│   ├── autofill/           # Autofill and form detection
+│   ├── background/         # Background service worker logic
+│   ├── platform/           # Platform-specific services
+│   │   └── browser/        # BrowserApi abstraction
+│   ├── popup/              # Extension popup UI
+│   ├── vault/              # Vault management
+│   ├── manifest.json       # Manifest V2 (legacy)
+│   └── manifest.v3.json    # Manifest V3 (current)
+├── package.json            # Build scripts and dependencies
+└── webpack.config.js       # Build configuration
+```
+
+## Browser-Specific Features
+
+### Safari
+
+Safari has unique requirements and limitations:
+
+- Requires manual event listener cleanup to prevent memory leaks
+- Tab query APIs can return unexpected results across windows
+- Native messaging for clipboard operations
+
+See the [Architecture](/apps/browser/architecture) page for Safari-specific patterns.
+
+### Firefox
+
+Firefox supports both Manifest V2 and V3:
+
+- Uses `browser.*` API namespace (Web Extensions API)
+- Sidebar action support
+- Android support for Firefox Mobile
+
+## Build Targets
+
+The extension can be built for different browsers and manifest versions:
+
+```bash
+# Chrome (Manifest V3)
+npm run build:chrome
+
+# Firefox (Manifest V2 by default)
+npm run build:firefox
+
+# Firefox (Manifest V3)
+cross-env MANIFEST_VERSION=3 npm run build:firefox
+
+# Safari
+npm run build:safari
+
+# Edge
+npm run build:edge
+
+# Opera
+npm run build:opera
+```
+
+See [Building](/apps/browser/building) for complete build instructions.
+
+## Development Mode
+
+For active development with automatic rebuilding:
+
+```bash
+# Watch mode for Chrome
+npm run build:watch:chrome
+
+# Watch mode for Firefox
+npm run build:watch:firefox
+```
+
+## Next Steps
+
+- [Building the Extension](/apps/browser/building) - Build commands and development setup
+- [Architecture Details](/apps/browser/architecture) - Deep dive into extension architecture
+- [Manifest V3 Migration](/apps/browser/manifest-v3) - Understanding Manifest V3 changes

@@ -1,0 +1,574 @@
+---
+title: Token Service
+description: API reference for token management and authentication token operations
+---
+
+## Overview
+
+The Token Service manages access tokens, refresh tokens, API keys, and two-factor tokens. It handles secure storage of authentication credentials across different vault timeout configurations and provides utilities for token validation and decoding.
+
+## TokenService
+
+Abstract service for managing authentication tokens.
+
+### Observables
+
+#### hasAccessToken$()
+
+```typescript
+abstract hasAccessToken$(userId: UserId): Observable<boolean>
+```
+
+Returns an observable that emits a boolean indicating whether the user has an access token.
+
+**Parameters:**
+- `userId` - The user ID to check for an access token
+
+**Returns:** `Observable<boolean>` - Observable emitting token presence status
+
+---
+
+## Token Management Methods
+
+### setTokens()
+
+```typescript
+abstract setTokens(
+  accessToken: string,
+  vaultTimeoutAction: VaultTimeoutAction,
+  vaultTimeout: VaultTimeout,
+  refreshToken?: string,
+  clientIdClientSecret?: [string, string]
+): Promise<SetTokensResult>
+```
+
+Sets the access token, refresh token, API Key Client ID, and API Key Client Secret in memory or disk based on the given vault timeout configuration and the derived access token user ID.
+
+**Parameters:**
+- `accessToken` - The access token to set
+- `vaultTimeoutAction` - The action to take when the vault times out
+- `vaultTimeout` - The timeout for the vault
+- `refreshToken` - Optional refresh token (undefined for CLI Login via API Key flow)
+- `clientIdClientSecret` - Optional tuple of API Key Client ID and Client Secret
+
+**Returns:** `Promise<SetTokensResult>` - Result containing the tokens that were set
+
+**Notes:**
+- For platforms that support secure storage, tokens are stored in secure storage instead of on disk
+- This method enforces setting access token and refresh token together for efficiency
+
+---
+
+### clearTokens()
+
+```typescript
+abstract clearTokens(userId?: UserId): Promise<void>
+```
+
+Clears the access token, refresh token, API Key Client ID, and API Key Client Secret out of memory, disk, and secure storage if supported.
+
+**Parameters:**
+- `userId` - Optional user ID to clear tokens for; if not provided, the active user ID is used
+
+**Returns:** `Promise<void>`
+
+---
+
+### setAccessToken()
+
+```typescript
+abstract setAccessToken(
+  accessToken: string,
+  vaultTimeoutAction: VaultTimeoutAction,
+  vaultTimeout: VaultTimeout
+): Promise<string>
+```
+
+Sets the access token in memory or disk based on the given vault timeout configuration.
+
+**Parameters:**
+- `accessToken` - The access token to set
+- `vaultTimeoutAction` - The action to take when the vault times out
+- `vaultTimeout` - The timeout for the vault
+
+**Returns:** `Promise<string>` - The access token that has been set
+
+**Note:** For platforms that support secure storage, the access token is stored in secure storage instead of on disk.
+
+---
+
+### clearAccessToken()
+
+```typescript
+abstract clearAccessToken(userId?: UserId): Promise<void>
+```
+
+Clears the access token for the given user ID out of memory, disk, and secure storage if supported.
+
+**Parameters:**
+- `userId` - Optional user ID to clear the access token for; if not provided, the active user is used
+
+**Returns:** `Promise<void>`
+
+---
+
+### getAccessToken()
+
+```typescript
+abstract getAccessToken(userId: UserId): Promise<string | null>
+```
+
+Gets the access token for the specified user.
+
+**Parameters:**
+- `userId` - The user ID to get the access token for
+
+**Returns:** `Promise<string | null>` - The access token or null
+
+---
+
+### getRefreshToken()
+
+```typescript
+abstract getRefreshToken(userId: UserId): Promise<string | null>
+```
+
+Gets the refresh token for the specified user.
+
+**Parameters:**
+- `userId` - The user ID to get the refresh token for
+
+**Returns:** `Promise<string | null>` - The refresh token or null
+
+---
+
+## API Key Methods
+
+### setClientId()
+
+```typescript
+abstract setClientId(
+  clientId: string,
+  vaultTimeoutAction: VaultTimeoutAction,
+  vaultTimeout: VaultTimeout,
+  userId?: UserId
+): Promise<string>
+```
+
+Sets the API Key Client ID for the user in memory or disk based on the vault timeout configuration.
+
+**Parameters:**
+- `clientId` - The API Key Client ID to set
+- `vaultTimeoutAction` - The action to take when the vault times out
+- `vaultTimeout` - The timeout for the vault
+- `userId` - Optional user ID; uses active user if not provided
+
+**Returns:** `Promise<string>` - The API Key Client ID that has been set
+
+---
+
+### getClientId()
+
+```typescript
+abstract getClientId(userId: UserId): Promise<string | undefined>
+```
+
+Gets the API Key Client ID for the given user.
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Promise<string | undefined>` - The API Key Client ID or undefined
+
+---
+
+### setClientSecret()
+
+```typescript
+abstract setClientSecret(
+  clientSecret: string,
+  vaultTimeoutAction: VaultTimeoutAction,
+  vaultTimeout: VaultTimeout,
+  userId?: UserId
+): Promise<string>
+```
+
+Sets the API Key Client Secret for the user in memory or disk based on the vault timeout configuration.
+
+**Parameters:**
+- `clientSecret` - The API Key Client Secret to set
+- `vaultTimeoutAction` - The action to take when the vault times out
+- `vaultTimeout` - The timeout for the vault
+- `userId` - Optional user ID; uses active user if not provided
+
+**Returns:** `Promise<string>` - The client secret that has been set
+
+---
+
+### getClientSecret()
+
+```typescript
+abstract getClientSecret(userId: UserId): Promise<string | undefined>
+```
+
+Gets the API Key Client Secret for the given user.
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Promise<string | undefined>` - The API Key Client Secret or undefined
+
+---
+
+## Two-Factor Token Methods
+
+### setTwoFactorToken()
+
+```typescript
+abstract setTwoFactorToken(email: string, twoFactorToken: string): Promise<void>
+```
+
+Sets the two-factor token for the given email in global state. The two-factor token is set when the user checks "remember me" when completing two-factor authentication and is used to bypass two-factor authentication for a period of time.
+
+**Parameters:**
+- `email` - The email to set the two-factor token for
+- `twoFactorToken` - The two-factor token to set
+
+**Returns:** `Promise<void>`
+
+---
+
+### getTwoFactorToken()
+
+```typescript
+abstract getTwoFactorToken(email: string): Promise<string | null>
+```
+
+Gets the two-factor token for the given email.
+
+**Parameters:**
+- `email` - The email to get the two-factor token for
+
+**Returns:** `Promise<string | null>` - The two-factor token or null if not found
+
+---
+
+### clearTwoFactorToken()
+
+```typescript
+abstract clearTwoFactorToken(email: string): Promise<void>
+```
+
+Clears the two-factor token for the given email out of global state.
+
+**Parameters:**
+- `email` - The email to clear the two-factor token for
+
+**Returns:** `Promise<void>`
+
+---
+
+## Token Utility Methods
+
+### decodeAccessToken()
+
+```typescript
+abstract decodeAccessToken(tokenOrUserId?: string | UserId): Promise<DecodedAccessToken>
+```
+
+Decodes the access token to extract user information.
+
+**Parameters:**
+- `tokenOrUserId` - The access token to decode or the user ID to retrieve the access token for; if null, the active user's token is used
+
+**Returns:** `Promise<DecodedAccessToken>` - The decoded access token containing user claims
+
+---
+
+### getTokenExpirationDate()
+
+```typescript
+abstract getTokenExpirationDate(userId: UserId): Promise<Date | null>
+```
+
+Gets the expiration date for the access token.
+
+**Parameters:**
+- `userId` - The user ID
+
+**Returns:** `Promise<Date | null>` - The expiration date or null if token can't be decoded or has no expiration
+
+---
+
+### tokenSecondsRemaining()
+
+```typescript
+abstract tokenSecondsRemaining(userId: UserId, offsetSeconds?: number): Promise<number>
+```
+
+Calculates the adjusted time in seconds until the access token expires, considering an optional offset.
+
+**Parameters:**
+- `userId` - The user ID
+- `offsetSeconds` - Optional seconds to subtract from the remaining time (default: 0). Creates a buffer before actual expiration, useful for preemptive actions
+
+**Returns:** `Promise<number>` - The adjusted seconds remaining
+
+---
+
+### tokenNeedsRefresh()
+
+```typescript
+abstract tokenNeedsRefresh(userId: UserId, minutes?: number): Promise<boolean>
+```
+
+Checks if the access token needs to be refreshed.
+
+**Parameters:**
+- `userId` - The user ID
+- `minutes` - Optional number of minutes before expiration to consider refreshing (default: 5)
+
+**Returns:** `Promise<boolean>` - True if the token needs to be refreshed
+
+---
+
+## User Information Methods
+
+### getUserId()
+
+```typescript
+abstract getUserId(): Promise<UserId>
+```
+
+Gets the user ID for the active user from the access token.
+
+**Returns:** `Promise<UserId>` - The user ID
+
+**Deprecated:** Use `AccountService.activeAccount$` instead
+
+---
+
+### getEmail()
+
+```typescript
+abstract getEmail(): Promise<string>
+```
+
+Gets the email for the active user from the access token.
+
+**Returns:** `Promise<string>` - The email address
+
+**Deprecated:** Use `AccountService.activeAccount$` instead
+
+---
+
+### getEmailVerified()
+
+```typescript
+abstract getEmailVerified(): Promise<boolean>
+```
+
+Gets the email verified status for the active user from the access token.
+
+**Returns:** `Promise<boolean>` - True if email is verified
+
+---
+
+### getName()
+
+```typescript
+abstract getName(): Promise<string>
+```
+
+Gets the name for the active user from the access token.
+
+**Returns:** `Promise<string>` - The user's name
+
+**Deprecated:** Use `AccountService.activeAccount$` instead
+
+---
+
+### getIssuer()
+
+```typescript
+abstract getIssuer(): Promise<string>
+```
+
+Gets the issuer for the active user from the access token.
+
+**Returns:** `Promise<string>` - The token issuer
+
+---
+
+### getIsExternal()
+
+```typescript
+abstract getIsExternal(userId: UserId): Promise<boolean>
+```
+
+Gets whether the user authenticated via an external mechanism (SSO).
+
+**Parameters:**
+- `userId` - The user ID to check
+
+**Returns:** `Promise<boolean>` - True if external authentication was used
+
+---
+
+## Security Stamp Methods
+
+### getSecurityStamp()
+
+```typescript
+abstract getSecurityStamp(userId?: UserId): Promise<string | null>
+```
+
+Gets the security stamp for the specified or active user.
+
+**Parameters:**
+- `userId` - Optional user ID; uses active user if not provided
+
+**Returns:** `Promise<string | null>` - The security stamp or null
+
+---
+
+### setSecurityStamp()
+
+```typescript
+abstract setSecurityStamp(securityStamp: string, userId?: UserId): Promise<void>
+```
+
+Sets the security stamp for the specified or active user.
+
+**Parameters:**
+- `securityStamp` - The security stamp to set
+- `userId` - Optional user ID; uses active user if not provided
+
+**Returns:** `Promise<void>`
+
+---
+
+## Types
+
+### DecodedAccessToken
+
+```typescript
+interface DecodedAccessToken {
+  sub: string;          // User ID
+  email: string;        // Email address
+  email_verified: boolean;
+  name: string;         // Display name
+  premium: boolean;     // Premium status
+  iss: string;          // Issuer
+  nbf: number;          // Not before timestamp
+  exp: number;          // Expiration timestamp
+  iat: number;          // Issued at timestamp
+  amr: string[];        // Authentication methods
+}
+```
+
+### SetTokensResult
+
+```typescript
+interface SetTokensResult {
+  accessToken: string;
+  refreshToken?: string;
+}
+```
+
+---
+
+## Example Usage
+
+### Setting Tokens After Login
+
+```typescript
+import { TokenService, VaultTimeoutAction } from '@bitwarden/common';
+
+const tokenService: TokenService;
+
+// Set tokens after successful authentication
+const result = await tokenService.setTokens(
+  accessToken,
+  VaultTimeoutAction.Lock,
+  15, // 15 minutes timeout
+  refreshToken
+);
+
+console.log('Tokens set:', result);
+```
+
+### Checking Token Expiration
+
+```typescript
+const userId: UserId = await tokenService.getUserId();
+
+// Check if token needs refresh (within 5 minutes of expiration)
+const needsRefresh = await tokenService.tokenNeedsRefresh(userId);
+
+if (needsRefresh) {
+  // Refresh token logic
+  const secondsRemaining = await tokenService.tokenSecondsRemaining(userId);
+  console.log(`Token expires in ${secondsRemaining} seconds`);
+}
+```
+
+### Managing Two-Factor Remember Token
+
+```typescript
+const email = 'user@example.com';
+
+// Save 2FA remember token
+await tokenService.setTwoFactorToken(email, 'remember_token_here');
+
+// Retrieve 2FA token on next login
+const savedToken = await tokenService.getTwoFactorToken(email);
+
+if (savedToken) {
+  // Use saved token to bypass 2FA
+  console.log('2FA can be bypassed with saved token');
+}
+
+// Clear 2FA token on logout
+await tokenService.clearTwoFactorToken(email);
+```
+
+### Decoding Access Token
+
+```typescript
+const userId: UserId = await tokenService.getUserId();
+const decoded = await tokenService.decodeAccessToken(userId);
+
+console.log('User info from token:', {
+  userId: decoded.sub,
+  email: decoded.email,
+  name: decoded.name,
+  premium: decoded.premium,
+  emailVerified: decoded.email_verified
+});
+```
+
+### Managing API Keys
+
+```typescript
+const userId: UserId = await tokenService.getUserId();
+
+// Store API key credentials
+await tokenService.setClientId(
+  'client_id',
+  VaultTimeoutAction.Lock,
+  null, // Never timeout
+  userId
+);
+
+await tokenService.setClientSecret(
+  'client_secret',
+  VaultTimeoutAction.Lock,
+  null,
+  userId
+);
+
+// Retrieve API key credentials
+const clientId = await tokenService.getClientId(userId);
+const clientSecret = await tokenService.getClientSecret(userId);
+```

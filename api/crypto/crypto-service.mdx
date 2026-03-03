@@ -1,0 +1,389 @@
+---
+title: Crypto Service
+description: Main cryptography service abstraction for low-level crypto operations
+---
+
+## Overview
+
+The `CryptoFunctionService` provides low-level cryptographic primitives for encryption, decryption, hashing, and key generation operations. This service is the foundation of Bitwarden's cryptographic operations.
+
+<Warning>
+**HAZMAT WARNING**: Most methods in this service are deprecated for direct use. Contact the Key Management team before using these low-level crypto functions. New features should use SDK methods instead.
+</Warning>
+
+## Location
+
+```
+libs/common/src/key-management/crypto/abstractions/crypto-function.service.ts
+```
+
+## Interface
+
+### Password-Based Key Derivation
+
+#### `pbkdf2()`
+
+Derives a key from a password using PBKDF2 (Password-Based Key Derivation Function 2).
+
+```typescript
+abstract pbkdf2(
+  password: string | Uint8Array,
+  salt: string | Uint8Array,
+  algorithm: "sha256" | "sha512",
+  iterations: number,
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `password` - The password to derive a key from
+- `salt` - Salt value to use in derivation
+- `algorithm` - Hash algorithm (`"sha256"` or `"sha512"`)
+- `iterations` - Number of iterations
+
+**Returns:** `Promise<Uint8Array>` - The derived key
+
+<Warning>
+Deprecated. Do not use for new code. Contact Key Management team if needed.
+</Warning>
+
+### Key Derivation Functions
+
+#### `hkdf()`
+
+Performs HKDF (HMAC-based Key Derivation Function) key derivation.
+
+```typescript
+abstract hkdf(
+  ikm: Uint8Array,
+  salt: string | Uint8Array,
+  info: string | Uint8Array,
+  outputByteSize: number,
+  algorithm: "sha256" | "sha512",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `ikm` - Input keying material
+- `salt` - Salt value
+- `info` - Context and application specific information
+- `outputByteSize` - Desired output length in bytes
+- `algorithm` - Hash algorithm (`"sha256"` or `"sha512"`)
+
+**Returns:** `Promise<Uint8Array>` - The derived key
+
+<Warning>
+Deprecated. Implement low-level crypto operations in the SDK instead.
+</Warning>
+
+#### `hkdfExpand()`
+
+Performs the expand step of HKDF.
+
+```typescript
+abstract hkdfExpand(
+  prk: Uint8Array,
+  info: string | Uint8Array,
+  outputByteSize: number,
+  algorithm: "sha256" | "sha512",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `prk` - Pseudorandom key from HKDF extract step
+- `info` - Context and application specific information
+- `outputByteSize` - Desired output length in bytes
+- `algorithm` - Hash algorithm
+
+**Returns:** `Promise<Uint8Array>` - The expanded key
+
+### Hashing
+
+#### `hash()`
+
+Generates a cryptographic hash of the input value.
+
+```typescript
+abstract hash(
+  value: string | Uint8Array,
+  algorithm: "sha1" | "sha256" | "sha512" | "md5",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `value` - The value to hash
+- `algorithm` - Hash algorithm to use
+
+**Returns:** `Promise<Uint8Array>` - The hash output
+
+**Supported Algorithms:**
+- `sha1` - SHA-1 (deprecated, avoid for new code)
+- `sha256` - SHA-256
+- `sha512` - SHA-512
+- `md5` - MD5 (deprecated, avoid for new code)
+
+<Warning>
+Deprecated for direct use. Contact Key Management team if needed.
+</Warning>
+
+#### `hmacFast()`
+
+Computes HMAC (Hash-based Message Authentication Code) for a value.
+
+```typescript
+abstract hmacFast(
+  value: Uint8Array | string,
+  key: Uint8Array | string,
+  algorithm: "sha1" | "sha256" | "sha512",
+): Promise<Uint8Array | string>;
+```
+
+**Parameters:**
+- `value` - The value to compute HMAC for
+- `key` - The HMAC key
+- `algorithm` - Hash algorithm
+
+**Returns:** `Promise<Uint8Array | string>` - The HMAC result
+
+### Comparison
+
+#### `compareFast()`
+
+Performs constant-time comparison of two values to prevent timing attacks.
+
+```typescript
+abstract compareFast(
+  a: Uint8Array | string,
+  b: Uint8Array | string
+): Promise<boolean>;
+```
+
+**Parameters:**
+- `a` - First value to compare
+- `b` - Second value to compare
+
+**Returns:** `Promise<boolean>` - `true` if values are equal, `false` otherwise
+
+### AES Encryption/Decryption
+
+#### `aesDecryptFastParameters()`
+
+Prepares parameters for fast AES decryption.
+
+```typescript
+abstract aesDecryptFastParameters(
+  data: string,
+  iv: string,
+  mac: string,
+  key: SymmetricCryptoKey,
+): CbcDecryptParameters<Uint8Array | string>;
+```
+
+**Parameters:**
+- `data` - Encrypted data (base64)
+- `iv` - Initialization vector (base64)
+- `mac` - Message authentication code (base64)
+- `key` - Symmetric crypto key
+
+**Returns:** `CbcDecryptParameters<Uint8Array | string>` - Decryption parameters
+
+<Warning>
+Deprecated. Do not use for new code.
+</Warning>
+
+#### `aesDecryptFast()`
+
+Performs fast AES decryption.
+
+```typescript
+abstract aesDecryptFast(
+  { mode, parameters }:
+    | { mode: "cbc"; parameters: CbcDecryptParameters<Uint8Array | string> }
+    | { mode: "ecb"; parameters: EcbDecryptParameters<Uint8Array | string> }
+): Promise<string>;
+```
+
+**Parameters:**
+- `mode` - Cipher mode (`"cbc"` or `"ecb"`)
+- `parameters` - Mode-specific decryption parameters
+
+**Returns:** `Promise<string>` - Decrypted plaintext
+
+<Warning>
+Deprecated. Do not use for new code.
+</Warning>
+
+#### `aesDecrypt()`
+
+Performs AES decryption.
+
+```typescript
+abstract aesDecrypt(
+  data: Uint8Array,
+  iv: Uint8Array,
+  key: Uint8Array,
+  mode: "cbc" | "ecb",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `data` - Encrypted data
+- `iv` - Initialization vector
+- `key` - Encryption key
+- `mode` - Cipher mode
+
+**Returns:** `Promise<Uint8Array>` - Decrypted data
+
+<Warning>
+Only used by DDG integration (until DDG uses PKCS#7 padding) and by LastPass importer. Do not use for new code.
+</Warning>
+
+### RSA Operations
+
+#### `rsaEncrypt()`
+
+Encrypts data using RSA with OAEP padding.
+
+```typescript
+abstract rsaEncrypt(
+  data: Uint8Array,
+  publicKey: Uint8Array,
+  algorithm: "sha1",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `data` - Data to encrypt
+- `publicKey` - RSA public key
+- `algorithm` - Hash algorithm for OAEP (`"sha1"`)
+
+**Returns:** `Promise<Uint8Array>` - Encrypted data
+
+<Warning>
+Deprecated. Do not use for new code.
+</Warning>
+
+#### `rsaDecrypt()`
+
+Decrypts RSA-encrypted data.
+
+```typescript
+abstract rsaDecrypt(
+  data: Uint8Array,
+  privateKey: Uint8Array,
+  algorithm: "sha1",
+): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `data` - Encrypted data
+- `privateKey` - RSA private key
+- `algorithm` - Hash algorithm for OAEP
+
+**Returns:** `Promise<Uint8Array>` - Decrypted data
+
+<Warning>
+Deprecated. Do not use for new code.
+</Warning>
+
+#### `rsaExtractPublicKey()`
+
+Extracts the public key from an RSA private key.
+
+```typescript
+abstract rsaExtractPublicKey(privateKey: Uint8Array): Promise<Uint8Array>;
+```
+
+**Parameters:**
+- `privateKey` - RSA private key
+
+**Returns:** `Promise<Uint8Array>` - Extracted public key
+
+#### `rsaGenerateKeyPair()`
+
+Generates an RSA key pair.
+
+```typescript
+abstract rsaGenerateKeyPair(length: 2048): Promise<[Uint8Array, Uint8Array]>;
+```
+
+**Parameters:**
+- `length` - Key length in bits (must be `2048`)
+
+**Returns:** `Promise<[Uint8Array, Uint8Array]>` - Tuple of `[publicKey, privateKey]`
+
+### Key Generation
+
+#### `aesGenerateKey()`
+
+Generates a cryptographically secure random AES key.
+
+```typescript
+abstract aesGenerateKey(
+  bitLength: 128 | 192 | 256 | 512
+): Promise<CsprngArray>;
+```
+
+**Parameters:**
+- `bitLength` - Key length in bits
+
+**Returns:** `Promise<CsprngArray>` - The generated key suitable for AES encryption
+
+**Supported Key Lengths:**
+- `128` - AES-128
+- `192` - AES-192
+- `256` - AES-256
+- `512` - AES-256 with HMAC-SHA256 (64 bytes total)
+
+#### `randomBytes()`
+
+Generates cryptographically secure random bytes.
+
+```typescript
+abstract randomBytes(length: number): Promise<CsprngArray>;
+```
+
+**Parameters:**
+- `length` - Number of bytes to generate
+
+**Returns:** `Promise<CsprngArray>` - Random bytes from a cryptographically secure random number generator
+
+<Note>
+Do not use this for generating encryption keys. Use `aesGenerateKey()` or `rsaGenerateKeyPair()` instead.
+</Note>
+
+## Usage Example
+
+```typescript
+import { CryptoFunctionService } from '@bitwarden/common/key-management/crypto/abstractions/crypto-function.service';
+
+// Generate a random AES-256 key
+const key = await cryptoFunctionService.aesGenerateKey(256);
+
+// Generate random bytes for a salt
+const salt = await cryptoFunctionService.randomBytes(16);
+
+// Hash a value with SHA-256
+const hash = await cryptoFunctionService.hash('data', 'sha256');
+
+// Constant-time comparison
+const isEqual = await cryptoFunctionService.compareFast(hash1, hash2);
+```
+
+## Related Services
+
+- [EncryptService](/api/crypto/encryption) - High-level encryption/decryption operations
+- [KeyService](/api/crypto/key-generation) - Key management and generation
+
+## Security Considerations
+
+1. **Deprecation Warnings**: Most methods are deprecated for direct use. Always consult the Key Management team before using low-level crypto functions.
+
+2. **Use SDK Methods**: New cryptographic features should be implemented in the SDK rather than using these low-level primitives directly.
+
+3. **Algorithm Selection**: 
+   - Prefer SHA-256 or SHA-512 over SHA-1 or MD5
+   - Use appropriate key sizes (AES-256 recommended)
+
+4. **Constant-Time Operations**: Use `compareFast()` when comparing secrets to prevent timing attacks.
+
+5. **Random Number Generation**: Always use `aesGenerateKey()` or `randomBytes()` for cryptographic operations, never use `Math.random()`.

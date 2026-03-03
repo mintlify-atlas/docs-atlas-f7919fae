@@ -1,0 +1,591 @@
+---
+title: Native Modules
+description: Rust-based native modules and N-API integration in the Bitwarden Desktop app
+---
+
+The Bitwarden Desktop app uses Rust native modules for platform-specific functionality and performance-critical operations. These modules are exposed to Node.js via N-API (Node API).
+
+## Overview
+
+Native modules provide:
+
+- **Platform integration**: OS-specific features (biometrics, keychain, etc.)
+- **Performance**: Computation-heavy operations in Rust
+- **Security**: Memory-safe operations for sensitive data
+- **Cross-platform consistency**: Single Rust codebase with platform-specific implementations
+
+## Directory Structure
+
+```
+apps/desktop/desktop_native/
+├── Cargo.toml                    # Workspace manifest
+├── build.js                      # Build script for N-API modules
+├── core/                         # Core Rust functionality
+│   └── src/
+│       ├── lib.rs               # Module exports
+│       ├── biometric/           # Biometric authentication
+│       ├── biometric_v2/        # New biometric API
+│       ├── password/            # OS keychain integration
+│       ├── clipboard/           # Secure clipboard
+│       ├── ssh_agent/           # SSH agent server
+│       ├── autofill/            # Autofill integration
+│       ├── autostart/           # Auto-start on login
+│       ├── powermonitor/        # System power events
+│       ├── process_isolation/   # Process sandboxing
+│       ├── secure_memory/       # Encrypted memory storage
+│       ├── ipc/                 # Inter-process communication
+│       └── crypto/              # Cryptographic operations
+├── napi/                         # N-API bindings
+│   ├── src/lib.rs               # N-API exports
+│   └── build.rs                 # Build configuration
+├── autofill_provider/            # macOS autofill extension
+├── autotype/                     # Keyboard autotype functionality
+├── ssh_agent/                    # SSH agent implementation
+├── chromium_importer/            # Chrome/Edge password import
+├── bitwarden_chromium_import_helper/ # Isolated import process
+├── process_isolation/            # Process isolation helpers
+└── windows_plugin_authenticator/ # Windows WebAuthn
+```
+
+## Core Modules
+
+### Biometric Authentication
+
+**Module**: `core/src/biometric/` and `core/src/biometric_v2/`
+
+Provides OS-level biometric authentication:
+
+```rust
+// N-API exposed functions
+pub mod biometrics {
+    /// Check if biometric authentication is available
+    #[napi]
+    pub async fn available() -> napi::Result<bool> {
+        Biometric::available()
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    /// Prompt for biometric confirmation
+    #[napi]
+    pub async fn prompt(
+        hwnd: napi::bindgen_prelude::Buffer,
+        message: String,
+    ) -> napi::Result<bool> {
+        Biometric::prompt(hwnd.into(), message)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    /// Store encrypted secret with biometric protection
+    #[napi]
+    pub async fn set_biometric_secret(
+        service: String,
+        account: String,
+        secret: String,
+        key_material: Option<KeyMaterial>,
+        iv_b64: String,
+    ) -> napi::Result<String>
+
+    /// Retrieve biometric-protected secret
+    #[napi]
+    pub async fn get_biometric_secret(
+        service: String,
+        account: String,
+        key_material: Option<KeyMaterial>,
+    ) -> napi::Result<String>
+}
+```
+
+**Platform implementations**:
+- **Windows**: Windows Hello via Win32 APIs
+- **macOS**: Touch ID via Security Framework
+- **Linux**: Polkit for authentication prompts
+
+### Password Storage (Keychain)
+
+**Module**: `core/src/password/`
+
+Integrates with OS credential storage:
+
+```rust
+pub mod passwords {
+    /// Password not found error message
+    #[napi]
+    pub const PASSWORD_NOT_FOUND: &str = "Password not found";
+
+    /// Fetch stored password from keychain
+    #[napi]
+    pub async fn get_password(
+        service: String, 
+        account: String
+    ) -> napi::Result<String>
+
+    /// Save password to keychain
+    #[napi]
+    pub async fn set_password(
+        service: String,
+        account: String,
+        password: String,
+    ) -> napi::Result<()>
+
+    /// Delete password from keychain
+    #[napi]
+    pub async fn delete_password(
+        service: String, 
+        account: String
+    ) -> napi::Result<()>
+
+    /// Check if secure storage is available
+    #[napi]
+    pub async fn is_available() -> napi::Result<bool>
+}
+```
+
+**Platform implementations**:
+- **Windows**: Windows Credential Manager (DPAPI)
+- **macOS**: Keychain Services
+- **Linux**: Secret Service API (libsecret)
+
+### SSH Agent
+
+**Module**: `core/src/ssh_agent/` and `ssh_agent/`
+
+Provides a native SSH agent implementation:
+
+- Stores SSH keys securely
+- Handles SSH signing requests
+- Platform-specific socket/pipe communication
+- Peer credential verification
+
+**Features**:
+- Named pipes on Windows
+- Unix domain sockets on macOS/Linux
+- Request parsing and response handling
+- Secure key storage with encryption
+
+### Clipboard
+
+**Module**: `core/src/clipboard.rs`
+
+Secure clipboard operations with auto-clear functionality.
+
+### Autofill
+
+**Module**: `core/src/autofill/`
+
+Platform-native autofill integration:
+
+- **macOS**: Safari autofill extension provider
+- **Windows**: Credential provider integration
+- **Linux**: Desktop environment integration
+
+### Process Isolation
+
+**Module**: `core/src/process_isolation/`
+
+Sandboxing and process isolation for security-sensitive operations:
+
+- **Windows**: Job objects and security attributes
+- **macOS**: Sandbox profiles
+- **Linux**: Namespaces and seccomp
+
+### Secure Memory
+
+**Module**: `core/src/secure_memory/`
+
+Encrypted memory storage for sensitive data:
+
+```rust
+pub mod secure_memory {
+    // Encrypted memory store
+    pub struct EncryptedMemoryStore;
+    
+    // Platform-specific secure key storage
+    pub mod secure_key {
+        // Linux: memfd_secret, keyctl
+        // Windows: DPAPI
+        // macOS: Keychain
+    }
+}
+```
+
+**Features**:
+- Memory locking (mlock)
+- Automatic zeroing on drop
+- Platform-specific encryption
+
+### Chromium Importer
+
+**Module**: `chromium_importer/`
+
+Imports passwords from Chromium-based browsers:
+
+- Decrypts Chrome/Edge passwords
+- Platform-specific decryption:
+  - **Windows**: DPAPI decryption
+  - **macOS**: Keychain access
+  - **Linux**: Secret Service
+- Isolated helper process for security
+
+## N-API Integration
+
+### Building Native Modules
+
+Native modules are built using the N-API bindings:
+
+```bash
+# Build all native modules
+npm run build-native
+
+# macOS with autofill provider
+npm run build-native-macos
+```
+
+The build process:
+
+1. Compiles Rust code using `cargo build`
+2. Uses `napi-rs` to generate Node.js bindings
+3. Creates platform-specific native modules (`.node` files)
+4. Copies modules to the appropriate output directory
+
+### N-API Module Structure
+
+```rust
+// desktop_native/napi/src/lib.rs
+#[macro_use]
+extern crate napi_derive;
+
+// Export Rust functions as Node.js modules
+#[napi]
+pub mod passwords {
+    #[napi]
+    pub async fn get_password(service: String, account: String) -> napi::Result<String> {
+        desktop_core::password::get_password(&service, &account)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+}
+
+#[napi]
+pub mod biometrics {
+    // ...
+}
+```
+
+### Importing in TypeScript
+
+Native modules are imported in the **main process only**:
+
+```typescript
+// Main process - Direct import
+import { biometrics, passwords } from "@bitwarden/desktop-napi";
+
+class MainBiometricsService {
+  async authenticateWithBiometric(message: string): Promise<boolean> {
+    // Call Rust function
+    const result = await biometrics.prompt(Buffer.from([]), message);
+    return result;
+  }
+}
+
+// Expose to renderer via IPC
+ipcMain.handle("biometric.authenticate", async (event, message) => {
+  return mainBiometricsService.authenticateWithBiometric(message);
+});
+```
+
+<Warning>
+**Never import native modules in the renderer process!**
+
+Native modules can only be loaded in the main process. Use IPC to expose functionality to the renderer.
+
+```typescript
+// ❌ WRONG - In renderer/Angular code
+import { biometrics } from "@bitwarden/desktop-napi"; // Will fail!
+
+// ✅ CORRECT - In renderer/Angular code
+const result = await window.ipc.keyManagement.biometric.authenticate(message);
+```
+</Warning>
+
+## Platform-Specific Code
+
+Rust modules use conditional compilation for platform-specific code:
+
+```rust
+// core/src/password/mod.rs
+
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::*;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::*;
+
+#[cfg(target_os = "linux")]
+mod unix;
+#[cfg(target_os = "linux")]
+pub use unix::*;
+```
+
+Each platform module implements the same interface:
+
+```rust
+// Platform trait
+pub trait PasswordStorage {
+    async fn get_password(service: &str, account: &str) -> Result<String>;
+    async fn set_password(service: &str, account: &str, password: &str) -> Result<()>;
+    async fn delete_password(service: &str, account: &str) -> Result<()>;
+}
+
+// Windows implementation uses DPAPI
+// macOS implementation uses Keychain
+// Linux implementation uses Secret Service
+```
+
+## Workspace Structure
+
+The `desktop_native` directory is a Cargo workspace:
+
+```toml
+# desktop_native/Cargo.toml
+[workspace]
+resolver = "2"
+members = [
+    "autofill_provider",
+    "autotype",
+    "bitwarden_chromium_import_helper",
+    "chromium_importer",
+    "core",                    # Core functionality
+    "napi",                    # N-API bindings
+    "process_isolation",
+    "proxy",
+    "ssh_agent",
+    "windows_plugin_authenticator",
+]
+
+[workspace.package]
+version = "0.0.0"
+license = "GPL-3.0"
+edition = "2021"
+```
+
+## Key Dependencies
+
+```toml
+[workspace.dependencies]
+# N-API bindings
+napi = "=3.3.0"
+napi-derive = "=3.2.5"
+napi-build = "=2.2.3"
+
+# Platform-specific
+security-framework = "=3.5.1"     # macOS Keychain
+windows = "=0.61.1"               # Windows APIs
+oo7 = "=0.5.0"                    # Linux Secret Service
+
+# SSH agent
+bitwarden-russh = { git = "..." }
+ssh-key = { version = "=0.6.7" }
+
+# Crypto
+aes = "=0.8.4"
+aes-gcm = "=0.10.3"
+chacha20poly1305 = "=0.10.1"
+sha2 = "=0.10.9"
+
+# Secure memory
+zeroizing-alloc = "=0.1.0"
+memsec = "=0.7.0"
+```
+
+## Memory Safety
+
+All native modules use a global allocator that zeros memory on deallocation:
+
+```rust
+// core/src/lib.rs
+use zeroizing_alloc::ZeroAlloc;
+
+#[global_allocator]
+static ALLOC: ZeroAlloc<std::alloc::System> = ZeroAlloc(std::alloc::System);
+```
+
+This ensures sensitive data is cleared from memory when freed.
+
+## Error Handling
+
+Rust errors are converted to N-API errors:
+
+```rust
+#[napi]
+pub async fn get_password(service: String, account: String) -> napi::Result<String> {
+    desktop_core::password::get_password(&service, &account)
+        .await
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+```
+
+In TypeScript, these become standard Error objects:
+
+```typescript
+try {
+  const password = await passwords.get_password("service", "account");
+} catch (error) {
+  if (error.message === passwords.PASSWORD_NOT_FOUND) {
+    // Handle missing password
+  }
+}
+```
+
+## Async Operations
+
+N-API supports async Rust functions:
+
+```rust
+// Rust async function
+#[napi]
+pub async fn get_password(service: String, account: String) -> napi::Result<String> {
+    // Async Rust code
+    let result = some_async_operation().await?;
+    Ok(result)
+}
+```
+
+In TypeScript, these return Promises:
+
+```typescript
+// Returns Promise<string>
+const password = await passwords.get_password("service", "account");
+```
+
+## Development Workflow
+
+### 1. Make Changes to Rust Code
+
+Edit files in `desktop_native/core/src/` or `desktop_native/napi/src/`
+
+### 2. Build Native Modules
+
+```bash
+npm run build-native
+```
+
+### 3. Rebuild Electron
+
+```bash
+npm run postinstall  # Runs electron-rebuild
+```
+
+### 4. Test in Main Process
+
+```typescript
+// src/main/some-service.ts
+import { biometrics } from "@bitwarden/desktop-napi";
+
+const result = await biometrics.available();
+console.log("Biometric available:", result);
+```
+
+## Common Pitfalls
+
+<Warning>
+**Native Module Loading Errors**
+
+If you see errors like "Cannot find module '@bitwarden/desktop-napi'":
+
+1. Ensure you've built the native modules: `npm run build-native`
+2. Run `npm run postinstall` to rebuild for Electron
+3. Check that you're importing in the main process, not renderer
+4. Verify the `.node` file exists in `node_modules/@bitwarden/desktop-napi/`
+</Warning>
+
+<Warning>
+**Platform-Specific Builds**
+
+Native modules must be built for the target platform:
+
+- Cannot cross-compile Windows modules on macOS
+- macOS modules require Xcode Command Line Tools
+- Linux modules require build-essential packages
+
+Use platform-specific CI runners for production builds.
+</Warning>
+
+## Testing Native Modules
+
+Rust modules can be tested independently:
+
+```bash
+cd desktop_native
+cargo test
+```
+
+For integration testing with Electron:
+
+```bash
+npm run build-native
+npm test
+```
+
+## Debugging Native Modules
+
+### Rust Side
+
+Use `tracing` crate for logging:
+
+```rust
+use tracing::{info, error, debug};
+
+#[napi]
+pub async fn get_password(service: String, account: String) -> napi::Result<String> {
+    debug!("Getting password for service: {}", service);
+    // ...
+}
+```
+
+### TypeScript Side
+
+Log errors from native module calls:
+
+```typescript
+try {
+  const result = await biometrics.prompt(Buffer.from([]), "Authenticate");
+} catch (error) {
+  console.error("Native module error:", error);
+  // error.message contains Rust error string
+}
+```
+
+## Performance Considerations
+
+- Native modules run asynchronously to avoid blocking the event loop
+- Heavy computations are offloaded to Rust
+- IPC overhead is minimal for N-API modules (direct function calls)
+- Use native modules for:
+  - Cryptographic operations
+  - File system operations
+  - Network operations
+  - OS API interactions
+
+## Security Best Practices
+
+1. **Validate inputs** in Rust before using them
+2. **Zero sensitive memory** using `zeroize` crate
+3. **Use secure allocators** (already configured globally)
+4. **Minimize exposed API surface** - only expose necessary functions
+5. **Audit dependencies** regularly using `cargo audit`
+
+## Future Improvements
+
+Potential areas for enhancement:
+
+- Migrate more JavaScript crypto operations to Rust
+- Add more comprehensive error types
+- Improve cross-platform consistency
+- Enhanced telemetry and diagnostics
+- Better integration testing framework

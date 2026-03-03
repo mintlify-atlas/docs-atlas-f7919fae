@@ -1,0 +1,72 @@
+---
+title: State Services
+description: Working with state services in the Bitwarden State Provider Framework
+---
+
+## State Services
+
+State services provide access to application state through the State Provider Framework. This page covers how to use state providers and state services to manage application state.
+
+## StateProvider
+
+The `StateProvider` is the main entry point for accessing state:
+
+```typescript
+interface StateProvider {
+  getGlobal<T>(keyDefinition: KeyDefinition<T>): GlobalState<T>;
+  getUser<T>(userId: UserId, keyDefinition: UserKeyDefinition<T>): SingleUserState<T>;
+  getDerived<TFrom, TTo>(
+    parentState$: Observable<TFrom>,
+    deriveDefinition: DeriveDefinition<TFrom, TTo>,
+    dependencies: Observable<unknown>[]
+  ): DerivedState<TTo>;
+}
+```
+
+## Using State in Services
+
+Services should inject the `StateProvider` and define their key definitions:
+
+```typescript
+import { Injectable } from "@angular/core";
+import { StateProvider } from "@bitwarden/common/platform/state";
+
+// Define state
+const VAULT_TIMEOUT = new KeyDefinition<number>(VAULT_SETTINGS, "timeout", {
+  deserializer: (value) => value,
+});
+
+@Injectable()
+export class VaultTimeoutService {
+  private vaultTimeoutState = this.stateProvider.getGlobal(VAULT_TIMEOUT);
+
+  constructor(private stateProvider: StateProvider) {}
+
+  async getTimeout(): Promise<number | null> {
+    return await firstValueFrom(this.vaultTimeoutState.state$);
+  }
+
+  async setTimeout(timeout: number): Promise<void> {
+    await this.vaultTimeoutState.update(() => timeout);
+  }
+}
+```
+
+## State Observables
+
+All state provides reactive observables:
+
+```typescript
+// Subscribe to state changes
+this.vaultTimeoutState.state$.subscribe(timeout => {
+  console.log("Vault timeout changed:", timeout);
+});
+
+// Use in Angular templates
+timeout$ = this.vaultTimeoutState.state$;
+```
+
+## Related Topics
+
+- [State Management Overview](/guide/state/overview)
+- [State Migrations](/guide/state/migrations)

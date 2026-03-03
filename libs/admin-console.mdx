@@ -1,0 +1,451 @@
+---
+title: 'Admin Console Library'
+description: 'Organization management, policies, and administrative features'
+---
+
+<Info>
+The Admin Console library (`@bitwarden/admin-console`) represents the public API of the Admin Console team at Bitwarden. It manages organizations, collections, user provisioning, and policy enforcement.
+</Info>
+
+## Overview
+
+The Admin Console library provides the business logic and services for managing Bitwarden organizations. It handles organization structure, collection management, user onboarding and permissions, policy configuration, and administrative workflows.
+
+## Core Concepts
+
+### Organizations
+
+Organizations are the top-level container for shared vault items and team collaboration. They provide:
+
+- **Shared Collections** - Organized sets of vault items accessible to teams
+- **User Management** - Invite, onboard, and manage organization members
+- **Access Control** - Define permissions and roles for users
+- **Policy Enforcement** - Apply security policies across the organization
+- **Billing & Subscriptions** - Organization-level subscription management
+
+### Collections
+
+Collections are logical groupings of vault items within an organization. They enable:
+
+- **Hierarchical Organization** - Nested collection names (e.g., "Engineering/Production/AWS")
+- **Granular Access Control** - Assign collections to specific users and groups
+- **Bulk Management** - Assign multiple items to collections simultaneously
+
+### Organization Users
+
+Users invited to an organization go through a lifecycle:
+
+<Steps>
+  <Step title="Invited">
+    Admin sends invitation via email with encrypted organization key
+  </Step>
+  
+  <Step title="Accepted">
+    User accepts invitation and provides public key for confirmation
+  </Step>
+  
+  <Step title="Confirmed">
+    Admin confirms user with encrypted organization key using user's public key
+  </Step>
+  
+  <Step title="Active">
+    User has full access to assigned collections and vault items
+  </Step>
+</Steps>
+
+## Directory Structure
+
+```
+libs/admin-console/
+├── src/
+│   └── common/                    # Common/shared functionality
+│       ├── collections/           # Collection management
+│       │   ├── abstractions/
+│       │   │   ├── collection.service.ts
+│       │   │   └── collection-admin.service.ts
+│       │   ├── models/
+│       │   │   ├── collection.request.ts
+│       │   │   └── bulk-collection-access.request.ts
+│       │   └── services/
+│       │       ├── default-collection.service.ts
+│       │       └── default-collection-admin.service.ts
+│       └── organization-user/     # Organization user management
+│           ├── abstractions/
+│           │   ├── organization-user.service.ts
+│           │   └── organization-user-api.service.ts
+│           ├── models/
+│           │   ├── requests/
+│           │   │   ├── organization-user-invite.request.ts
+│           │   │   ├── organization-user-confirm.request.ts
+│           │   │   ├── organization-user-bulk-confirm.request.ts
+│           │   │   └── organization-user-reset-password.request.ts
+│           │   └── responses/
+│           └── services/
+│               ├── default-organization-user.service.ts
+│               └── default-organization-user-api.service.ts
+```
+
+## Key Services
+
+### CollectionService
+
+Manages collection access and decryption for vault filtering and display.
+
+```typescript libs/admin-console/src/common/collections/abstractions/collection.service.ts
+abstract class CollectionService {
+  /**
+   * Stream of encrypted collections for a user
+   */
+  abstract encryptedCollections$(
+    userId: UserId
+  ): Observable<Collection[] | null>;
+  
+  /**
+   * Stream of decrypted collections for a user
+   */
+  abstract decryptedCollections$(
+    userId: UserId
+  ): Observable<CollectionView[]>;
+  
+  /**
+   * Get default collection for user in organization
+   */
+  abstract defaultUserCollection$(
+    userId: UserId,
+    orgId: OrganizationId
+  ): Observable<CollectionView | undefined>;
+  
+  /**
+   * Transform collections into tree structure
+   */
+  abstract getAllNested(
+    collections: CollectionView[]
+  ): TreeNode<CollectionView>[];
+  
+  /**
+   * Group collections by organization
+   */
+  abstract groupByOrganization(
+    collections: CollectionView[]
+  ): Map<OrganizationId, CollectionView[]>;
+}
+```
+
+### CollectionAdminService
+
+Provides administrative operations for managing collections (create, update, delete).
+
+```typescript libs/admin-console/src/common/collections/abstractions/collection-admin.service.ts
+abstract class CollectionAdminService {
+  /**
+   * Create new collection in organization
+   */
+  abstract create(
+    request: CollectionRequest,
+    organizationId: OrganizationId
+  ): Promise<CollectionView>;
+  
+  /**
+   * Update existing collection
+   */
+  abstract update(
+    id: CollectionId,
+    request: CollectionRequest
+  ): Promise<CollectionView>;
+  
+  /**
+   * Delete collection(s)
+   */
+  abstract delete(
+    ids: CollectionId[],
+    organizationId: OrganizationId
+  ): Promise<void>;
+  
+  /**
+   * Bulk update collection access
+   */
+  abstract bulkAssignAccess(
+    collectionIds: CollectionId[],
+    request: BulkCollectionAccessRequest
+  ): Promise<void>;
+}
+```
+
+### OrganizationUserService
+
+Handles organization user confirmation and management workflows.
+
+```typescript libs/admin-console/src/common/organization-user/abstractions/organization-user.service.ts
+abstract class OrganizationUserService {
+  /**
+   * Build confirmation request for organization user
+   */
+  abstract buildConfirmRequest(
+    organization: Organization,
+    publicKey: Uint8Array
+  ): Observable<OrganizationUserConfirmRequest>;
+  
+  /**
+   * Confirm single user in organization
+   */
+  abstract confirmUser(
+    organization: Organization,
+    userId: string,
+    publicKey: Uint8Array
+  ): Observable<void>;
+  
+  /**
+   * Bulk confirm multiple users
+   */
+  abstract bulkConfirmUsers(
+    organization: Organization,
+    userIdsWithKeys: { id: string; key: string }[]
+  ): Observable<ListResponse<OrganizationUserBulkResponse>>;
+  
+  /**
+   * Restore deleted user
+   */
+  abstract restoreUser(
+    organization: Organization,
+    userId: string
+  ): Observable<void>;
+  
+  /**
+   * Bulk restore multiple users
+   */
+  abstract bulkRestoreUsers(
+    organization: Organization,
+    userIds: string[]
+  ): Observable<ListResponse<OrganizationUserBulkResponse>>;
+}
+```
+
+### OrganizationUserApiService
+
+Handles API communication for organization user operations.
+
+```typescript libs/admin-console/src/common/organization-user/abstractions/organization-user-api.service.ts
+abstract class OrganizationUserApiService {
+  /**
+   * Invite new user to organization
+   */
+  abstract postOrganizationUserInvite(
+    organizationId: OrganizationId,
+    request: OrganizationUserInviteRequest
+  ): Promise<void>;
+  
+  /**
+   * Accept organization invitation
+   */
+  abstract postOrganizationUserAccept(
+    organizationId: OrganizationId,
+    userId: string,
+    request: OrganizationUserAcceptRequest
+  ): Promise<void>;
+  
+  /**
+   * Confirm organization user
+   */
+  abstract postOrganizationUserConfirm(
+    organizationId: OrganizationId,
+    userId: string,
+    request: OrganizationUserConfirmRequest
+  ): Promise<void>;
+}
+```
+
+## Organization User Lifecycle
+
+### Invitation Process
+
+```typescript
+// Admin invites user
+const inviteRequest = new OrganizationUserInviteRequest();
+inviteRequest.emails = ['newuser@example.com'];
+inviteRequest.type = OrganizationUserType.User;
+inviteRequest.accessAll = false;
+inviteRequest.collections = [
+  { id: 'collection-id', readOnly: false }
+];
+
+await orgUserApiService.postOrganizationUserInvite(
+  organizationId,
+  inviteRequest
+);
+```
+
+### Acceptance Process
+
+```typescript
+// User accepts invitation
+const acceptRequest = new OrganizationUserAcceptRequest();
+acceptRequest.token = 'invitation-token';
+acceptRequest.resetPasswordKey = encryptedPasswordResetKey;
+
+await orgUserApiService.postOrganizationUserAccept(
+  organizationId,
+  userId,
+  acceptRequest
+);
+```
+
+### Confirmation Process
+
+```typescript
+// Admin confirms user
+const confirmRequest = await orgUserService
+  .buildConfirmRequest(organization, userPublicKey)
+  .toPromise();
+
+await orgUserService.confirmUser(
+  organization,
+  userId,
+  userPublicKey
+);
+```
+
+## Collection Hierarchy
+
+Collections support hierarchical organization through naming:
+
+```typescript
+// Collection names define hierarchy
+const collections = [
+  { name: 'Engineering' },
+  { name: 'Engineering/Frontend' },
+  { name: 'Engineering/Backend' },
+  { name: 'Engineering/Backend/Production' },
+  { name: 'Marketing' },
+  { name: 'Marketing/Social Media' }
+];
+
+// Service builds tree structure
+const tree = collectionService.getAllNested(collections);
+
+/*
+Result:
+├── Engineering
+│   ├── Frontend
+│   └── Backend
+│       └── Production
+└── Marketing
+    └── Social Media
+*/
+```
+
+## Bulk Operations
+
+The library provides efficient bulk operations for administrative tasks:
+
+### Bulk User Confirmation
+
+```typescript
+const usersToConfirm = [
+  { id: 'user-1', key: 'encrypted-key-1' },
+  { id: 'user-2', key: 'encrypted-key-2' },
+  { id: 'user-3', key: 'encrypted-key-3' }
+];
+
+const response = await orgUserService.bulkConfirmUsers(
+  organization,
+  usersToConfirm
+).toPromise();
+
+// Check for errors
+response.data.forEach(result => {
+  if (result.error) {
+    console.error(`Failed to confirm ${result.id}: ${result.error}`);
+  }
+});
+```
+
+### Bulk Collection Access
+
+```typescript
+const accessRequest = new BulkCollectionAccessRequest();
+accessRequest.users = [
+  { id: 'user-1', readOnly: false },
+  { id: 'user-2', readOnly: true }
+];
+accessRequest.groups = [
+  { id: 'group-1', readOnly: false }
+];
+
+await collectionAdminService.bulkAssignAccess(
+  ['collection-1', 'collection-2'],
+  accessRequest
+);
+```
+
+## Organization Policies
+
+Organization admins can enforce security policies:
+
+- **Master Password Requirements** - Minimum complexity and length
+- **Two-Factor Authentication** - Require 2FA for all users
+- **Single Organization** - Prevent users from joining multiple orgs
+- **Personal Vault Export** - Disable personal vault exports
+- **Password Generator** - Enforce password generator settings
+- **Send Options** - Control Send feature usage
+
+<Info>
+Policy enforcement happens at multiple levels: client-side validation in the Admin Console library, and server-side enforcement during API operations. Policies are synced and cached locally for offline validation.
+</Info>
+
+## Domain Boundaries
+
+<Info>
+**Admin Console vs. Vault**: The Admin Console manages *organizational* resources (collections, organization users, policies), while the Vault library manages *personal* resources (folders, individual vault items). Collections are created in Admin Console but consumed in Vault.
+</Info>
+
+<Info>
+**Admin Console vs. Billing**: Organization creation and basic settings are in Admin Console, but subscription management, payment methods, and billing history are handled by the Billing library.
+</Info>
+
+<Info>
+**Admin Console vs. Auth**: User invitation and onboarding flows are in Admin Console, but the initial authentication and login flows are handled by the Auth library. Admin Console works with already-authenticated users.
+</Info>
+
+## Usage Example
+
+```typescript
+import {
+  CollectionService,
+  CollectionAdminService,
+  OrganizationUserService,
+  CollectionRequest
+} from '@bitwarden/admin-console';
+
+// Create a new collection
+const collectionRequest = new CollectionRequest();
+collectionRequest.name = 'Engineering/Production';
+collectionRequest.externalId = 'ext-prod-001';
+
+const collection = await collectionAdminService.create(
+  collectionRequest,
+  organizationId
+);
+
+// View all collections in tree structure
+const collections = await collectionService
+  .decryptedCollections$(userId)
+  .toPromise();
+
+const tree = collectionService.getAllNested(collections);
+
+// Confirm pending users
+const pendingUsers = await getPendingUsers(organizationId);
+for (const user of pendingUsers) {
+  await orgUserService.confirmUser(
+    organization,
+    user.id,
+    user.publicKey
+  );
+}
+```
+
+## Related Libraries
+
+- **[@bitwarden/vault](/libs/vault)** - Vault items and personal organization
+- **[@bitwarden/billing](/libs/billing)** - Organization subscriptions and payment
+- **[@bitwarden/auth](/libs/auth)** - User authentication and authorization

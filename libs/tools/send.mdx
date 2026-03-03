@@ -1,0 +1,382 @@
+---
+title: Send
+description: Send library for secure sharing in Bitwarden Clients
+---
+
+The Send library (`libs/tools/send`) provides secure, ephemeral sharing functionality for Bitwarden. Send allows users to transmit sensitive information (text or files) to anyone through an encrypted, self-destructing link.
+
+## Overview
+
+The Send library is split into two main packages:
+
+- **@bitwarden/send-core** - Core types, models, and services for Send functionality
+- **@bitwarden/send-ui** - Angular UI components for Send management
+
+Send is currently used by:
+- Bitwarden Web Vault
+- Desktop Application
+- Browser Extension
+- CLI
+
+## Architecture
+
+The Send library follows a service-oriented architecture with clear separation between core business logic and UI presentation.
+
+### Core Services
+
+#### SendFormService
+
+**File:** `libs/tools/send/send-ui/src/send-form/abstractions/send-form.service.ts`
+
+Service for creating and modifying Sends, handling encryption and server communication.
+
+**Methods:**
+
+```typescript
+abstract class SendFormService {
+  // Decrypt a send for viewing
+  abstract decryptSend(send: Send): Promise<SendView>;
+
+  // Save new or modified send to server
+  abstract saveSend(
+    send: SendView,
+    file: File | ArrayBuffer,
+    config: SendFormConfig,
+  ): Promise<SendView>;
+}
+```
+
+#### SendItemsService
+
+**File:** `libs/tools/send/send-ui/src/services/send-items.service.ts`
+
+Manages the list of user's Sends, providing filtering, sorting, and state management.
+
+#### SendListFiltersService
+
+**File:** `libs/tools/send/send-ui/src/services/send-list-filters.service.ts`
+
+Handles filtering logic for Send lists (by type, expiration, deletion date, etc.).
+
+## Send Types
+
+Sends support two content types:
+
+### Text Send
+
+Shares text content securely. The text is encrypted and can only be accessed through the generated link.
+
+**Properties:**
+- Text content (encrypted)
+- Optional hiding of text (requires manual reveal)
+- Maximum access count
+- Expiration date
+- Deletion date
+- Password protection
+
+### File Send
+
+Shares files securely. Files are encrypted before upload and can only be downloaded through the generated link.
+
+**Properties:**
+- Encrypted file (up to 1GB for premium users)
+- File name and size
+- Maximum access count
+- Expiration date
+- Deletion date
+- Password protection
+
+## Components
+
+Located in `libs/tools/send/send-ui/src/`
+
+### SendFormComponent
+
+**File:** `send-form/components/send-form.component.ts`
+
+Main component for creating and editing Sends. Provides a complete form interface with validation.
+
+**Usage:**
+
+```typescript
+import { SendFormComponent } from '@bitwarden/send-ui';
+
+@Component({
+  selector: 'app-create-send',
+  template: `
+    <tools-send-form
+      [config]="config"
+      [originalSendView]="existingSend"
+      (sendSaved)="onSendSaved($event)">
+    </tools-send-form>
+  `
+})
+export class CreateSendComponent {
+  config: SendFormConfig;
+  existingSend?: SendView;
+
+  onSendSaved(send: SendView) {
+    // Handle saved send
+  }
+}
+```
+
+### SendDetailsComponent
+
+**File:** `send-form/components/send-details/send-details.component.ts`
+
+Component for displaying and editing Send details (name, notes, etc.).
+
+### SendFileDetailsComponent
+
+**File:** `send-form/components/send-details/send-file-details.component.ts`
+
+Component specifically for file Send details, including file selection and upload.
+
+### SendTextDetailsComponent
+
+**File:** `send-form/components/send-details/send-text-details.component.ts`
+
+Component for text Send details, including text input and hiding options.
+
+### SendListComponent
+
+**File:** `send-list/send-list.component.ts`
+
+Displays a list of user's Sends with filtering and search capabilities.
+
+**Usage:**
+
+```typescript
+import { SendListComponent } from '@bitwarden/send-ui';
+
+@Component({
+  selector: 'app-sends',
+  template: `
+    <tools-send-list
+      [filter]="currentFilter"
+      (sendSelected)="onSelectSend($event)">
+    </tools-send-list>
+  `
+})
+export class SendsPageComponent {
+  currentFilter = { type: null };
+
+  onSelectSend(send: SendView) {
+    // Handle send selection
+  }
+}
+```
+
+### SendTableComponent
+
+**File:** `send-table/send-table.component.ts`
+
+Table view for displaying Sends with sortable columns.
+
+### NewSendDropdownComponent
+
+**File:** `new-send-dropdown/new-send-dropdown.component.ts`
+
+Dropdown menu for creating new Sends (text or file).
+
+### SendSearchComponent
+
+**File:** `send-search/send-search.component.ts`
+
+Search interface for filtering Sends by name or notes.
+
+### SendListFiltersComponent
+
+**File:** `send-list-filters/send-list-filters.component.ts`
+
+UI component for Send filtering options (type, status, etc.).
+
+## Send Configuration
+
+The `SendFormConfig` interface defines how the Send form behaves:
+
+```typescript
+interface SendFormConfig {
+  // Mode: create, edit, or partial edit
+  mode: "add" | "edit" | "partial-edit";
+  
+  // Send type: text or file
+  sendType: SendType;
+  
+  // Allow type change
+  areSendsAllowed: boolean;
+  
+  // Individual sends enabled
+  individualSendsEnabled: boolean;
+}
+```
+
+## Send Models
+
+Sends use the following key models from `@bitwarden/common`:
+
+### SendView
+
+Decrypted Send data for display and editing:
+
+```typescript
+class SendView {
+  id: string;
+  name: string;
+  notes: string;
+  type: SendType;  // Text or File
+  text?: SendTextView;
+  file?: SendFileView;
+  maxAccessCount?: number;
+  accessCount: number;
+  revisionDate: Date;
+  deletionDate: Date;
+  expirationDate?: Date;
+  password?: string;
+  disabled: boolean;
+  hideEmail: boolean;
+}
+```
+
+### Send
+
+Encrypted Send data for storage:
+
+```typescript
+class Send {
+  id: string;
+  type: SendType;
+  name: EncString;
+  notes: EncString;
+  text?: SendText;
+  file?: SendFile;
+  // ... other encrypted properties
+}
+```
+
+## Creating a Send
+
+**Example: Creating a Text Send**
+
+```typescript
+import { SendFormService, SendFormConfig } from '@bitwarden/send-ui';
+import { SendView } from '@bitwarden/common/tools/send/models/view/send.view';
+import { SendType } from '@bitwarden/common/tools/send/types/send-type';
+
+constructor(private sendFormService: SendFormService) {}
+
+async createTextSend(text: string) {
+  const sendView = new SendView();
+  sendView.type = SendType.Text;
+  sendView.name = "My Secret Message";
+  sendView.text = new SendTextView();
+  sendView.text.text = text;
+  sendView.deletionDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  sendView.expirationDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day
+  sendView.maxAccessCount = 5;
+  sendView.password = "optional-password";
+
+  const config: SendFormConfig = {
+    mode: "add",
+    sendType: SendType.Text,
+    areSendsAllowed: true,
+    individualSendsEnabled: true
+  };
+
+  const savedSend = await this.sendFormService.saveSend(sendView, null, config);
+  const shareUrl = `https://send.bitwarden.com/#${savedSend.accessId}/${savedSend.urlB64Key}`;
+  return shareUrl;
+}
+```
+
+**Example: Creating a File Send**
+
+```typescript
+async createFileSend(file: File) {
+  const sendView = new SendView();
+  sendView.type = SendType.File;
+  sendView.name = "Secure File Share";
+  sendView.file = new SendFileView();
+  sendView.file.fileName = file.name;
+  sendView.file.size = file.size;
+  sendView.deletionDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const config: SendFormConfig = {
+    mode: "add",
+    sendType: SendType.File,
+    areSendsAllowed: true,
+    individualSendsEnabled: true
+  };
+
+  const savedSend = await this.sendFormService.saveSend(sendView, file, config);
+  return savedSend;
+}
+```
+
+## Send Permissions
+
+Send functionality can be restricted by:
+
+1. **User Account Type** - Premium features for file Sends
+2. **Organization Policies** - Admins can disable Send for users
+3. **Send Limits** - File size limits, access count limits
+
+## Security Features
+
+- **End-to-End Encryption** - All Send content is encrypted before leaving the client
+- **Zero-Knowledge** - Bitwarden servers cannot decrypt Send content
+- **Access Controls** - Maximum access counts, expiration dates, deletion dates
+- **Password Protection** - Optional password requirement for accessing Sends
+- **Email Hiding** - Option to hide sender's email from recipients
+- **Audit Trail** - Access count tracking
+
+## Integration Example
+
+**Complete Send Workflow:**
+
+```typescript
+import { 
+  SendFormService,
+  SendItemsService,
+  SendListFiltersService 
+} from '@bitwarden/send-ui';
+
+@Component({
+  selector: 'app-send-manager',
+  templateUrl: './send-manager.component.html'
+})
+export class SendManagerComponent implements OnInit {
+  sends$: Observable<SendView[]>;
+  
+  constructor(
+    private sendFormService: SendFormService,
+    private sendItemsService: SendItemsService,
+    private sendListFiltersService: SendListFiltersService
+  ) {}
+
+  ngOnInit() {
+    // Load user's sends
+    this.sends$ = this.sendItemsService.getSends();
+  }
+
+  async createSend(type: SendType) {
+    const sendView = new SendView();
+    sendView.type = type;
+    // Configure send...
+    
+    const config: SendFormConfig = { mode: "add", sendType: type };
+    const saved = await this.sendFormService.saveSend(sendView, null, config);
+    return saved;
+  }
+
+  async deleteSend(sendId: string) {
+    // Delete send logic
+  }
+}
+```
+
+## Related
+
+- [Generator Library](/libs/tools/generator) - Password and credential generation
+- [Export Library](/libs/tools/export) - Vault import/export

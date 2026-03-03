@@ -1,0 +1,230 @@
+---
+title: 'Auth Library'
+description: 'Authentication and authorization library for Bitwarden Clients'
+---
+
+<Info>
+The Auth library (`@bitwarden/auth`) represents the public API of the Auth team at Bitwarden. It handles all authentication flows, login strategies, and token management.
+</Info>
+
+## Overview
+
+The Auth library is responsible for managing user authentication across all Bitwarden client applications. It provides a comprehensive set of services and strategies for handling different authentication methods, from traditional master password login to modern WebAuthn and SSO.
+
+## Authentication Methods
+
+Bitwarden supports five authentication methods, each implemented as a dedicated login strategy:
+
+<CardGroup cols={2}>
+  <Card title="Master Password" icon="key">
+    Traditional login with master password and KDF validation
+  </Card>
+  <Card title="Auth Request" icon="mobile">
+    Login with Device - authenticate using a one-time access code
+  </Card>
+  <Card title="Single Sign-On" icon="building">
+    SSO login via SAML or OpenID Connect (OIDC)
+  </Card>
+  <Card title="Passkey (WebAuthn)" icon="fingerprint">
+    Passwordless authentication using WebAuthn credentials
+  </Card>
+  <Card title="User API Key" icon="code">
+    API key-based authentication for programmatic access
+  </Card>
+</CardGroup>
+
+## Core Architecture
+
+### Login Strategy Pattern
+
+The library uses the Strategy Design Pattern to handle different authentication methods. Each authentication method has its own login strategy:
+
+```typescript
+// Base login strategy
+LoginStrategy
+├── PasswordLoginStrategy
+├── AuthRequestLoginStrategy
+├── SsoLoginStrategy
+├── WebAuthnLoginStrategy
+└── UserApiLoginStrategy
+```
+
+### Login Flow
+
+The authentication flow follows these steps:
+
+<Steps>
+  <Step title="Build Credentials Object">
+    The initiating component creates a credentials object (e.g., `PasswordLoginCredentials`) containing the necessary authentication data.
+  </Step>
+  
+  <Step title="Call LoginStrategyService">
+    The credentials are passed to `LoginStrategyService.logIn(credentials)`, which determines the appropriate strategy based on the `AuthenticationType`.
+  </Step>
+  
+  <Step title="Execute Strategy">
+    The selected strategy builds a `LoginStrategyData` object with a `TokenRequest` and caches it for potential 2FA or device verification.
+  </Step>
+  
+  <Step title="Token Request">
+    The strategy sends a POST request to `/connect/token` on the Identity Server with the appropriate credentials.
+  </Step>
+  
+  <Step title="Process Response">
+    The server responds with one of three types:
+    - `IdentityTokenResponse` - Authentication successful
+    - `IdentityTwoFactorResponse` - 2FA required
+    - `IdentityDeviceVerificationResponse` - Device verification required
+  </Step>
+  
+  <Step title="Return AuthResult">
+    An `AuthResult` object is returned to the initiating component, which directs the user based on the authentication state.
+  </Step>
+</Steps>
+
+## Key Services
+
+### LoginStrategyService
+
+The orchestrator service that manages login strategy initialization and execution.
+
+```typescript libs/auth/src/common/services/login-strategies/login-strategy.service.ts
+abstract class LoginStrategyServiceAbstraction {
+  currentAuthType$: Observable<AuthenticationType | null>;
+  
+  abstract logIn(
+    credentials: PasswordLoginCredentials | SsoLoginCredentials | ...
+  ): Promise<AuthResult>;
+  
+  abstract logInTwoFactor(
+    twoFactor: TokenTwoFactorRequest
+  ): Promise<AuthResult>;
+  
+  abstract logInNewDeviceVerification(
+    deviceVerificationOtp: string
+  ): Promise<AuthResult>;
+}
+```
+
+### Auth Request Service
+
+Manages authentication request flows for login-with-device scenarios.
+
+```typescript libs/auth/src/common/abstractions/auth-request.service.abstraction.ts
+abstract class AuthRequestServiceAbstraction {
+  abstract approveOrDenyAuthRequest(
+    approve: boolean,
+    authRequest: AuthRequestResponse
+  ): Promise<AuthRequestResponse>;
+}
+```
+
+### Logout Service
+
+Handles cleanup and state management during user logout.
+
+```typescript libs/auth/src/common/abstractions/logout.service.ts
+abstract class LogoutService {
+  abstract logout(): Promise<void>;
+}
+```
+
+## Directory Structure
+
+```
+libs/auth/
+├── src/
+│   ├── angular/              # Angular-specific components
+│   │   ├── login/           # Login components
+│   │   ├── registration/    # Registration flow
+│   │   ├── two-factor-auth/ # 2FA components
+│   │   └── sso/             # SSO components
+│   └── common/              # Platform-agnostic code
+│       ├── abstractions/    # Service interfaces
+│       ├── login-strategies/# Strategy implementations
+│       ├── models/          # Data models
+│       └── services/        # Service implementations
+│           ├── accounts/
+│           ├── auth-request/
+│           ├── login-strategies/
+│           └── logout/
+```
+
+## Domain Boundaries
+
+<Info>
+**Authentication vs. Authorization**: The Auth library focuses on *authentication* (verifying user identity) and initial session establishment. Authorization and access control for specific resources are handled by other domain libraries like `@bitwarden/admin-console` for organization policies.
+</Info>
+
+<Info>
+**Token Management**: While the Auth library handles token acquisition during login, long-term token storage and refresh logic may be coordinated with platform-level services in `@bitwarden/platform`.
+</Info>
+
+## Login Credentials
+
+Each authentication method uses a specific credentials object:
+
+| Credentials Type | Authentication Method | Required Fields |
+|-----------------|----------------------|----------------|
+| `PasswordLoginCredentials` | Master Password | `email`, `masterPassword` |
+| `AuthRequestLoginCredentials` | Login with Device | `email`, `accessCode`, `authRequestId` |
+| `SsoLoginCredentials` | Single Sign-On | `code`, `codeVerifier`, `redirectUrl` |
+| `WebAuthnLoginCredentials` | Passkey (WebAuthn) | `token`, `deviceResponse` |
+| `UserApiLoginCredentials` | API Key | `clientId`, `clientSecret` |
+
+## Two-Factor Authentication
+
+When 2FA is required, the authentication flow is modified:
+
+1. Initial login attempt returns `IdentityTwoFactorResponse`
+2. `LoginStrategyData` is cached in the `LoginStrategyService`
+3. User is routed to `/2fa` to enter their 2FA token
+4. `logInTwoFactor()` appends the 2FA token to the cached request
+5. Re-submit to `/connect/token` with 2FA token included
+
+## New Device Verification
+
+For users without 2FA on a new device:
+
+1. Initial login returns `IdentityDeviceVerificationResponse`
+2. User receives verification code via email
+3. User is routed to `/device-verification`
+4. `logInNewDeviceVerification()` submits the OTP code
+5. Authentication completes upon successful verification
+
+## Usage Example
+
+```typescript
+import { 
+  LoginStrategyService,
+  PasswordLoginCredentials,
+  AuthenticationType 
+} from '@bitwarden/auth';
+
+// Build credentials
+const credentials = new PasswordLoginCredentials(
+  'user@example.com',
+  'masterPassword123'
+);
+
+// Attempt login
+const authResult = await loginStrategyService.logIn(credentials);
+
+// Handle result
+if (authResult.requiresTwoFactor) {
+  // Route to 2FA page
+  router.navigate(['/2fa']);
+} else if (authResult.requiresDeviceVerification) {
+  // Route to device verification
+  router.navigate(['/device-verification']);
+} else {
+  // Login successful - route to vault
+  router.navigate(['/vault']);
+}
+```
+
+## Related Libraries
+
+- **[@bitwarden/platform](/libs/platform)** - Platform abstractions and state management
+- **[@bitwarden/vault](/libs/vault)** - Post-authentication vault access
+- **[@bitwarden/admin-console](/libs/admin-console)** - Organization policies and access control

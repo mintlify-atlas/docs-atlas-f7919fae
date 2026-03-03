@@ -1,0 +1,395 @@
+---
+title: Contributing
+description: Learn how to contribute to Bitwarden Clients - from setting up your environment to submitting pull requests
+---
+
+# Contributing to Bitwarden Clients
+
+Thank you for your interest in contributing to Bitwarden! This guide will help you get started with contributing to the clients repository.
+
+<Note>
+  The official Contributing Documentation is maintained at [contributing.bitwarden.com](https://contributing.bitwarden.com/). This page provides a quick overview and repository-specific guidance.
+</Note>
+
+## Getting started
+
+<Steps>
+  <Step title="Read the official guidelines">
+    Visit [contributing.bitwarden.com](https://contributing.bitwarden.com/contributing/) for comprehensive contributing guidelines covering:
+    - Code of conduct
+    - Development workflow
+    - Code style and conventions
+    - Testing requirements
+    - Documentation standards
+  </Step>
+  
+  <Step title="Set up your development environment">
+    Follow the [installation guide](/setup/installation) to clone the repository and install dependencies:
+    ```bash
+    git clone https://github.com/bitwarden/clients.git
+    cd clients
+    npm install
+    ```
+  </Step>
+  
+  <Step title="Choose what to work on">
+    - Browse [open issues](https://github.com/bitwarden/clients/issues)
+    - Look for issues labeled `good first issue`
+    - Check the project boards for planned work
+    - Propose your own improvements
+  </Step>
+  
+  <Step title="Create a branch">
+    Create a feature branch from `main`:
+    ```bash
+    git checkout -b feature/my-contribution
+    ```
+  </Step>
+</Steps>
+
+## Development workflow
+
+### 1. Make your changes
+
+Edit the code following the project's conventions:
+
+- **TypeScript** - All new code must be TypeScript
+- **Strict typing** - Avoid `any` types when possible
+- **Formatting** - Code is auto-formatted with Prettier
+- **Linting** - Must pass ESLint checks
+
+### 2. Test your changes
+
+Run the relevant tests for your changes:
+
+<CodeGroup>
+
+```bash All tests
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+```
+
+```bash Specific app
+# Test specific app (using Nx)
+npx nx test browser
+npx nx test desktop
+npx nx test web
+npx nx test cli
+```
+
+```bash Linting
+# Run linter
+npm run lint
+
+# Fix auto-fixable issues
+npm run lint:fix
+```
+
+```bash Format
+# Format all files
+npm run prettier
+```
+
+</CodeGroup>
+
+### 3. Build the application
+
+Ensure your changes build successfully:
+
+```bash
+# Browser extension
+cd apps/browser
+npm run build:chrome
+
+# Desktop application
+cd apps/desktop
+npm run build
+
+# Web vault
+cd apps/web
+npm run build:oss
+
+# CLI
+cd apps/cli
+npm run build:oss
+```
+
+### 4. Commit your changes
+
+Use clear, descriptive commit messages:
+
+```bash
+git add .
+git commit -m "feat: add password strength indicator to generator"
+```
+
+**Commit message format:**
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `refactor:` - Code refactoring
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks
+
+### 5. Submit a pull request
+
+Push your branch and create a pull request:
+
+```bash
+git push origin feature/my-contribution
+```
+
+Then:
+1. Go to [github.com/bitwarden/clients](https://github.com/bitwarden/clients)
+2. Click "New Pull Request"
+3. Select your branch
+4. Fill out the PR template with details about your changes
+5. Submit for review
+
+## Code style guidelines
+
+### TypeScript conventions
+
+```typescript
+// Use interfaces for object shapes
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+}
+
+// Use async/await instead of promises
+async function getUser(id: string): Promise<User> {
+  const response = await this.apiService.getUser(id);
+  return response.data;
+}
+
+// Use proper typing, avoid 'any'
+function processItems<T>(items: T[]): T[] {
+  return items.filter(item => item !== null);
+}
+```
+
+### Angular conventions
+
+```typescript
+// Component structure
+@Component({
+  selector: 'app-vault-items',
+  templateUrl: './vault-items.component.html',
+})
+export class VaultItemsComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+  
+  constructor(
+    private cipherService: CipherService,
+    private router: Router,
+  ) {}
+  
+  async ngOnInit() {
+    // Initialization logic
+  }
+  
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+}
+```
+
+### Naming conventions
+
+- **Files:** `kebab-case.ts` (e.g., `cipher-service.ts`)
+- **Classes:** `PascalCase` (e.g., `CipherService`)
+- **Interfaces:** `PascalCase` (e.g., `CipherView`)
+- **Variables/functions:** `camelCase` (e.g., `getCipher()`)
+- **Constants:** `UPPER_SNAKE_CASE` (e.g., `MAX_TIMEOUT`)
+
+## Testing guidelines
+
+### Unit tests
+
+All new features should include unit tests:
+
+```typescript
+describe('CipherService', () => {
+  let service: CipherService;
+  let cryptoService: MockProxy<CryptoService>;
+  
+  beforeEach(() => {
+    cryptoService = mock<CryptoService>();
+    service = new CipherService(cryptoService);
+  });
+  
+  it('should encrypt cipher data', async () => {
+    const cipher = createTestCipher();
+    const encrypted = await service.encrypt(cipher);
+    
+    expect(encrypted).toBeDefined();
+    expect(cryptoService.encrypt).toHaveBeenCalled();
+  });
+});
+```
+
+### Test coverage
+
+- Aim for high test coverage on business logic
+- Test edge cases and error conditions
+- Use mocks for external dependencies
+- Keep tests focused and isolated
+
+## Platform-specific guidelines
+
+Each application has unique architectural requirements:
+
+<Tabs>
+  <Tab title="Browser extension">
+    **Critical rules:**
+    
+    - Never use `chrome.*` or `browser.*` APIs directly - use `BrowserApi` abstraction
+    - Always use `BrowserApi.addListener()` in popup context (Safari requires cleanup)
+    - Use `BrowserApi.tabsQueryFirstCurrentWindowForSafari()` for tab queries
+    - Service workers can be terminated anytime - avoid assuming persistence
+    
+    See: `apps/browser/src/platform/browser/browser-api.ts`
+  </Tab>
+  
+  <Tab title="Desktop">
+    **Critical rules:**
+    
+    - Separate main process (Node.js) from renderer process (Angular)
+    - Never import Node.js modules in renderer process
+    - Never import Angular modules in main process
+    - Use IPC or preload scripts for cross-process communication
+    
+    See: `apps/desktop/src/*/preload.ts` for patterns
+  </Tab>
+  
+  <Tab title="Web">
+    **Critical rules:**
+    
+    - Never access browser extension APIs (no chrome.*/browser.* available)
+    - Assume multi-tenant organization features
+    - Don't rely on localStorage for security-critical data
+    - Use organization permission guards for protected routes
+    
+    See: `apps/web/src/app/admin-console/organizations/guards/`
+  </Tab>
+  
+  <Tab title="CLI">
+    **Critical rules:**
+    
+    - Output structured JSON when `process.env.BW_RESPONSE === "true"`
+    - Use Response objects from `apps/cli/src/models/response/`
+    - Never use `console.log()` - use `CliUtils.writeLn()`
+    - Respect `BW_CLEANEXIT` environment variable
+    
+    See: `apps/cli/src/utils.ts`
+  </Tab>
+</Tabs>
+
+## Pull request guidelines
+
+### PR checklist
+
+Before submitting, ensure:
+
+- [ ] Code builds without errors
+- [ ] All tests pass
+- [ ] Linting passes (`npm run lint`)
+- [ ] Code is formatted (`npm run prettier`)
+- [ ] Commit messages follow conventions
+- [ ] PR description explains the changes
+- [ ] Related issue is linked (if applicable)
+- [ ] Breaking changes are documented
+
+### PR review process
+
+1. **Automated checks** - CI runs tests and linting
+2. **Code review** - Maintainers review your code
+3. **Feedback** - Address review comments
+4. **Approval** - Maintainer approves the PR
+5. **Merge** - Changes are merged to `main`
+
+### Target branch
+
+<Warning>
+  All pull requests must be submitted against the `main` branch.
+</Warning>
+
+## Development tools
+
+### Recommended VS Code extensions
+
+The repository includes recommended extensions in `.vscode/extensions.json`:
+
+- **ESLint** - Real-time linting
+- **Prettier** - Code formatting
+- **Angular Language Service** - Angular IntelliSense
+- **Jest** - Test runner integration
+
+### Workspace settings
+
+VS Code workspace settings are provided in `clients.code-workspace`:
+
+```bash
+# Open in VS Code
+code clients.code-workspace
+```
+
+### Git hooks
+
+The repository uses Husky for git hooks:
+
+- **pre-commit** - Runs lint-staged (formats and lints staged files)
+- **commit-msg** - Validates commit message format
+
+These run automatically when you commit.
+
+## Getting help
+
+### Resources
+
+<CardGroup cols={2}>
+  <Card title="Official docs" icon="book" href="https://contributing.bitwarden.com/">
+    Comprehensive contributing documentation
+  </Card>
+  <Card title="Gitter chat" icon="message" href="https://gitter.im/bitwarden/Lobby">
+    Chat with the community
+  </Card>
+  <Card title="GitHub issues" icon="github" href="https://github.com/bitwarden/clients/issues">
+    Browse or report issues
+  </Card>
+  <Card title="Clients docs" icon="graduation-cap" href="https://contributing.bitwarden.com/getting-started/clients/">
+    Client-specific documentation
+  </Card>
+</CardGroup>
+
+### Questions?
+
+If you have questions about contributing:
+
+- Check the [Contributing Documentation](https://contributing.bitwarden.com/)
+- Ask in [Gitter chat](https://gitter.im/bitwarden/Lobby)
+- Open a [discussion on GitHub](https://github.com/bitwarden/clients/discussions)
+
+## Security vulnerabilities
+
+<Warning>
+  If you discover a security vulnerability, please follow the process outlined in [SECURITY.md](https://github.com/bitwarden/clients/blob/main/SECURITY.md). Do not open a public issue.
+</Warning>
+
+## License
+
+By contributing to Bitwarden, you agree that your contributions will be licensed under the GPL-3.0 license. See [LICENSE.txt](https://github.com/bitwarden/clients/blob/main/LICENSE.txt) for details.
+
+## We're hiring!
+
+Interested in contributing full-time? Bitwarden is hiring! Check out our [careers page](https://bitwarden.com/careers/) to see open positions.
+
+## Thank you!
+
+Your contributions make Bitwarden better for everyone. We appreciate your time and effort in helping improve the project.

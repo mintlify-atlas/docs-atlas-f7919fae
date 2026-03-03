@@ -1,0 +1,724 @@
+---
+title: Serve Mode
+description: Run Bitwarden CLI as a RESTful API server for programmatic access
+---
+
+Serve mode runs the Bitwarden CLI as a RESTful API web server, enabling programmatic access to vault operations through HTTP endpoints.
+
+## Starting the Server
+
+```bash
+bw serve
+```
+
+<Warning>
+You must be logged in before starting serve mode. The vault can be locked or unlocked.
+</Warning>
+
+### Options
+
+<ParamField path="--hostname" type="string">
+  Hostname to bind the API server to (default: `localhost`)
+  
+  Use `all` for no hostname binding (bind to all interfaces).
+</ParamField>
+
+<ParamField path="--port" type="number">
+  Port to run the API server on (default: `8087`)
+</ParamField>
+
+<ParamField path="--disable-origin-protection" type="boolean">
+  Allow requests with Origin header
+  
+  <Warning>
+  This option exists for backwards compatibility and exposes your environment to known CSRF attacks. Use with caution.
+  </Warning>
+</ParamField>
+
+### Examples
+
+```bash
+# Start with defaults (localhost:8087)
+bw serve
+
+# Custom port
+bw serve --port 8080
+
+# Custom hostname and port
+bw serve --hostname bwapi.mydomain.com --port 80
+
+# Bind to all interfaces
+bw serve --hostname all --port 8087
+```
+
+## Server Configuration
+
+When serve mode starts, it automatically sets:
+
+```bash
+BW_SERVE=true
+BW_NOINTERACTION=true
+```
+
+These ensure commands run non-interactively and format responses appropriately for API consumption.
+
+### Origin Protection
+
+By default, the server blocks requests with an `Origin` header to prevent CSRF attacks:
+
+```bash
+# Request with Origin header (blocked)
+curl -H "Origin: http://example.com" http://localhost:8087/status
+# HTTP 403 Forbidden
+```
+
+To disable this protection (not recommended):
+
+```bash
+bw serve --disable-origin-protection
+```
+
+### Advanced Hostname Options
+
+Serve mode supports several hostname formats:
+
+**File descriptor (connected socket)**:
+```bash
+bw serve --hostname fd+connected://3
+```
+
+**File descriptor (listening socket)**:
+```bash
+bw serve --hostname fd+listening://3
+```
+
+**Unix domain socket**:
+```bash
+bw serve --hostname unix:///tmp/bw.sock
+```
+
+## API Endpoints
+
+All endpoints return JSON responses. Most require an unlocked vault.
+
+### Status and Authentication
+
+#### GET /status
+
+Get server and vault status.
+
+```bash
+curl http://localhost:8087/status
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "serverUrl": "https://vault.bitwarden.com",
+    "lastSync": "2024-03-03T10:30:00.000Z",
+    "userEmail": "user@example.com",
+    "userId": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
+    "status": "unlocked"
+  }
+}
+```
+
+#### POST /unlock
+
+Unlock the vault.
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"password":"master-password"}' \
+  http://localhost:8087/unlock
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "noColor": false,
+    "object": "message",
+    "title": "Your vault is now unlocked!",
+    "message": "\n\nTo unlock your vault, set your session key to the `BW_SESSION` environment variable..."
+  }
+}
+```
+
+<Note>
+For security, `passwordFile` and `passwordEnv` query parameters are blocked in serve mode.
+</Note>
+
+#### POST /lock
+
+Lock the vault.
+
+```bash
+curl -X POST http://localhost:8087/lock
+```
+
+#### POST /sync
+
+Sync vault data from server.
+
+```bash
+curl -X POST http://localhost:8087/sync
+
+# Force full sync
+curl -X POST "http://localhost:8087/sync?force=true"
+```
+
+### Vault Object Operations
+
+#### GET /list/object/:object
+
+List vault objects.
+
+**Parameters**:
+- `:object` - Object type: `items`, `folders`, `collections`, `org-collections`, `org-members`, `organizations`, `send`
+
+**Query parameters**:
+- `search` - Search filter
+- `url` - URL filter (for items)
+- `folderid` - Folder ID filter
+- `collectionid` - Collection ID filter
+- `organizationid` - Organization ID filter
+- `trash` - Show trash items (boolean)
+- `archived` - Show archived items (boolean, requires feature flag)
+
+```bash
+# List all items
+curl http://localhost:8087/list/object/items
+
+# Search items
+curl "http://localhost:8087/list/object/items?search=google"
+
+# Items in folder
+curl "http://localhost:8087/list/object/items?folderid=a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6"
+
+# Items without folder
+curl "http://localhost:8087/list/object/items?folderid=null"
+
+# Items in trash
+curl "http://localhost:8087/list/object/items?trash=true"
+
+# List folders
+curl http://localhost:8087/list/object/folders
+
+# List organizations
+curl http://localhost:8087/list/object/organizations
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "object": "item",
+      "id": "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
+      "name": "Google Account",
+      "type": 1,
+      "login": {
+        "username": "user@example.com",
+        "password": "...",
+        "totp": null,
+        "uris": [
+          {"uri": "https://google.com"}
+        ]
+      }
+    }
+  ]
+}
+```
+
+#### GET /object/:object/:id
+
+Get a specific object.
+
+**Parameters**:
+- `:object` - Object type: `item`, `folder`, `collection`, `org-collection`, `organization`, `send`
+- `:id` - Object ID or search term
+
+**Query parameters**:
+- `itemid` - Item ID (for attachments)
+- `organizationid` - Organization ID (for org objects)
+
+```bash
+# Get item by ID
+curl http://localhost:8087/object/item/a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6
+
+# Get folder
+curl http://localhost:8087/object/folder/folder-id
+
+# Get Send
+curl http://localhost:8087/object/send/send-id
+```
+
+#### POST /object/:object
+
+Create a new object.
+
+**Parameters**:
+- `:object` - Object type: `item`, `folder`, `org-collection`, `send`
+
+**Body**: JSON or base64-encoded JSON object
+
+**Query parameters**:
+- `organizationid` - Organization ID (for org objects)
+
+```bash
+# Create folder
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Folder"}' \
+  http://localhost:8087/object/folder
+
+# Create item
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d @item.json \
+  http://localhost:8087/object/item
+
+# Create Send
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"type":0,"text":{"text":"secret message"},"name":"My Send","deletionDate":"2024-03-10T00:00:00.000Z"}' \
+  http://localhost:8087/object/send
+```
+
+#### PUT /object/:object/:id
+
+Update an existing object.
+
+**Parameters**:
+- `:object` - Object type: `item`, `folder`, `org-collection`, `send`
+- `:id` - Object ID
+
+**Body**: JSON or base64-encoded JSON with updates
+
+```bash
+curl -X PUT \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Updated Folder Name"}' \
+  http://localhost:8087/object/folder/folder-id
+```
+
+#### DELETE /object/:object/:id
+
+Delete an object.
+
+**Parameters**:
+- `:object` - Object type: `item`, `folder`, `org-collection`, `send`
+- `:id` - Object ID
+
+**Query parameters**:
+- `itemid` - Item ID (for attachments)
+- `organizationid` - Organization ID (for org objects)
+- `permanent` - Permanently delete (boolean, for items)
+
+```bash
+# Soft delete item (to trash)
+curl -X DELETE http://localhost:8087/object/item/item-id
+
+# Permanently delete item
+curl -X DELETE "http://localhost:8087/object/item/item-id?permanent=true"
+
+# Delete folder
+curl -X DELETE http://localhost:8087/object/folder/folder-id
+
+# Delete Send
+curl -X DELETE http://localhost:8087/object/send/send-id
+```
+
+### Attachments
+
+#### POST /attachment
+
+Create an attachment.
+
+**Content-Type**: `multipart/form-data`
+
+**Form fields**:
+- `file` - File to upload
+- `itemid` - Item ID to attach to
+
+```bash
+curl -X POST \
+  -F "file=@photo.jpg" \
+  -F "itemid=item-id" \
+  http://localhost:8087/attachment
+```
+
+### Send Operations
+
+#### GET /send/list
+
+List all Sends.
+
+```bash
+curl http://localhost:8087/send/list
+```
+
+#### POST /send/:id/remove-password
+
+Remove password from a Send.
+
+**Parameters**:
+- `:id` - Send ID
+
+```bash
+curl -X POST http://localhost:8087/send/send-id/remove-password
+```
+
+### Organization Operations
+
+#### POST /move/:id/:organizationId
+
+Move item to organization.
+
+**Parameters**:
+- `:id` - Item ID
+- `:organizationId` - Organization ID
+
+**Body**: Array of collection IDs (JSON or base64-encoded)
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '["collection-id-1","collection-id-2"]' \
+  http://localhost:8087/move/item-id/org-id
+```
+
+#### POST /confirm/:object/:id
+
+Confirm organization member.
+
+**Parameters**:
+- `:object` - Object type (currently only `org-member`)
+- `:id` - Member ID
+
+**Query parameters**:
+- `organizationid` - Organization ID (required)
+
+```bash
+curl -X POST "http://localhost:8087/confirm/org-member/member-id?organizationid=org-id"
+```
+
+#### POST /restore/:object/:id
+
+Restore item from trash or archive.
+
+**Parameters**:
+- `:object` - Object type (currently only `item`)
+- `:id` - Item ID
+
+```bash
+curl -X POST http://localhost:8087/restore/item/item-id
+```
+
+#### POST /archive/:object/:id
+
+Archive an item.
+
+**Parameters**:
+- `:object` - Object type (currently only `item`)
+- `:id` - Item ID
+
+<Note>
+Requires PM19148_InnovationArchive feature flag.
+</Note>
+
+```bash
+curl -X POST http://localhost:8087/archive/item/item-id
+```
+
+### Utilities
+
+#### GET /generate
+
+Generate password or passphrase.
+
+**Query parameters**:
+- `uppercase` - Include uppercase (boolean)
+- `lowercase` - Include lowercase (boolean)
+- `number` - Include numbers (boolean)
+- `special` - Include special chars (boolean)
+- `passphrase` - Generate passphrase (boolean)
+- `length` - Password length (number)
+- `words` - Passphrase words (number)
+- `separator` - Word separator (string)
+- `capitalize` - Capitalize words (boolean)
+- `includeNumber` - Include number in passphrase (boolean)
+
+```bash
+# Default password
+curl http://localhost:8087/generate
+
+# Custom password
+curl "http://localhost:8087/generate?uppercase=true&lowercase=true&number=true&special=true&length=20"
+
+# Passphrase
+curl "http://localhost:8087/generate?passphrase=true&words=4&separator=-"
+```
+
+## Response Format
+
+All endpoints return a consistent response structure:
+
+### Success Response
+
+```json
+{
+  "success": true,
+  "data": {
+    // Response data
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "success": false,
+  "message": "Error description"
+}
+```
+
+**HTTP Status Codes**:
+- `200 OK` - Success
+- `400 Bad Request` - Error (vault locked, invalid input, etc.)
+- `403 Forbidden` - Origin protection violation
+
+### Locked Vault Errors
+
+Endpoints that require an unlocked vault return:
+
+```json
+{
+  "success": false,
+  "message": "Vault is locked."
+}
+```
+
+**HTTP Status**: `400`
+
+### Not Logged In Errors
+
+```json
+{
+  "success": false,
+  "message": "You are not logged in."
+}
+```
+
+**HTTP Status**: `400`
+
+## Environment Variables
+
+Serve mode automatically sets:
+
+<ParamField path="BW_SERVE" type="string">
+  Always set to `"true"` in serve mode
+</ParamField>
+
+<ParamField path="BW_NOINTERACTION" type="string">
+  Always set to `"true"` to disable interactive prompts
+</ParamField>
+
+<ParamField path="BW_RESPONSE" type="string">
+  Commands respect this for JSON formatting
+</ParamField>
+
+You can still use other environment variables like `BW_SESSION` when starting the server.
+
+## Usage Examples
+
+### Complete Workflow
+
+```bash
+# 1. Login
+bw login user@example.com
+
+# 2. Start server
+bw serve --port 8087 &
+
+# 3. Unlock vault via API
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"password":"master-password"}' \
+  http://localhost:8087/unlock
+
+# 4. List items
+curl http://localhost:8087/list/object/items
+
+# 5. Get password
+curl http://localhost:8087/object/item/item-id | jq -r '.data.login.password'
+
+# 6. Create folder
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"name":"API Folder"}' \
+  http://localhost:8087/object/folder
+
+# 7. Lock vault when done
+curl -X POST http://localhost:8087/lock
+```
+
+### Python Client Example
+
+```python
+import requests
+import json
+
+class BitwardenClient:
+    def __init__(self, base_url="http://localhost:8087"):
+        self.base_url = base_url
+    
+    def unlock(self, password):
+        response = requests.post(
+            f"{self.base_url}/unlock",
+            json={"password": password}
+        )
+        return response.json()
+    
+    def list_items(self, search=None):
+        params = {"search": search} if search else {}
+        response = requests.get(
+            f"{self.base_url}/list/object/items",
+            params=params
+        )
+        return response.json()["data"]
+    
+    def get_password(self, item_id):
+        response = requests.get(f"{self.base_url}/object/item/{item_id}")
+        return response.json()["data"]["login"]["password"]
+    
+    def create_folder(self, name):
+        response = requests.post(
+            f"{self.base_url}/object/folder",
+            json={"name": name}
+        )
+        return response.json()
+
+# Usage
+client = BitwardenClient()
+client.unlock("master-password")
+items = client.list_items(search="google")
+password = client.get_password(items[0]["id"])
+```
+
+### JavaScript/Node.js Example
+
+```javascript
+const axios = require('axios');
+
+class BitwardenClient {
+  constructor(baseURL = 'http://localhost:8087') {
+    this.client = axios.create({ baseURL });
+  }
+
+  async unlock(password) {
+    const { data } = await this.client.post('/unlock', { password });
+    return data;
+  }
+
+  async listItems(search) {
+    const { data } = await this.client.get('/list/object/items', {
+      params: search ? { search } : {}
+    });
+    return data.data;
+  }
+
+  async getPassword(itemId) {
+    const { data } = await this.client.get(`/object/item/${itemId}`);
+    return data.data.login.password;
+  }
+
+  async generate(options = {}) {
+    const { data } = await this.client.get('/generate', { params: options });
+    return data.data.data;
+  }
+}
+
+// Usage
+(async () => {
+  const bw = new BitwardenClient();
+  await bw.unlock('master-password');
+  
+  const items = await bw.listItems('google');
+  const password = await bw.getPassword(items[0].id);
+  console.log('Password:', password);
+  
+  const newPassword = await bw.generate({
+    uppercase: true,
+    lowercase: true,
+    number: true,
+    special: true,
+    length: 20
+  });
+  console.log('Generated:', newPassword);
+})();
+```
+
+## Security Considerations
+
+<Warning>
+Serve mode provides network access to your vault. Follow these security practices:
+</Warning>
+
+1. **Bind to localhost**: Default `localhost` binding ensures only local access
+2. **Use HTTPS reverse proxy**: For remote access, use nginx/Apache with TLS
+3. **Enable origin protection**: Keep `--disable-origin-protection` disabled
+4. **Network isolation**: Run on isolated networks or use firewall rules
+5. **Lock when done**: Always lock the vault after operations
+6. **Avoid public exposure**: Never expose serve mode directly to the internet
+
+### Reverse Proxy Example (nginx)
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name bw-api.internal.company.com;
+    
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+    
+    location / {
+        proxy_pass http://localhost:8087;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        
+        # Remove Origin header to pass protection
+        proxy_set_header Origin "";
+    }
+}
+```
+
+## Architecture
+
+Serve mode is implemented with:
+
+- **Koa**: Web framework (src/commands/serve.command.ts:31)
+- **@koa/router**: Routing (oss-serve-configurator.ts:221-439)
+- **koa-bodyparser**: JSON body parsing
+- **koa-json**: JSON response formatting
+- **@koa/multer**: Multipart form data (attachments)
+
+Endpoint configuration is in `src/oss-serve-configurator.ts`, which can be extended by commercial builds.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="./commands">
+    Full CLI commands documentation
+  </Card>
+  <Card title="Overview" icon="book" href="./overview">
+    CLI overview and installation
+  </Card>
+</CardGroup>
