@@ -1,0 +1,232 @@
+{
+  "projectType": "saas",
+  "projectName": "Bitwarden Clients",
+  "projectDescription": "Bitwarden client applications including web vault, browser extension, desktop, and CLI for secure password management.",
+  "theme": "aspen",
+  "primaryColor": "#175DDC",
+  "lightColor": "#1F5FDC",
+  "darkColor": "#134FBF",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "architecture",
+              "contributing"
+            ]
+          },
+          {
+            "group": "Development Setup",
+            "pages": [
+              "setup/requirements",
+              "setup/installation",
+              "setup/building"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Applications",
+        "groups": [
+          {
+            "group": "Browser Extension",
+            "pages": [
+              "apps/browser/overview",
+              "apps/browser/building",
+              "apps/browser/architecture",
+              "apps/browser/manifest-v3"
+            ]
+          },
+          {
+            "group": "Desktop",
+            "pages": [
+              "apps/desktop/overview",
+              "apps/desktop/building",
+              "apps/desktop/architecture",
+              "apps/desktop/native-modules"
+            ]
+          },
+          {
+            "group": "Web Vault",
+            "pages": [
+              "apps/web/overview",
+              "apps/web/building",
+              "apps/web/architecture"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "apps/cli/overview",
+              "apps/cli/building",
+              "apps/cli/commands",
+              "apps/cli/serve-mode"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Libraries",
+        "groups": [
+          {
+            "group": "Core Libraries",
+            "pages": [
+              "libs/overview",
+              "libs/common",
+              "libs/angular"
+            ]
+          },
+          {
+            "group": "Domain Libraries",
+            "pages": [
+              "libs/auth",
+              "libs/vault",
+              "libs/admin-console",
+              "libs/billing"
+            ]
+          },
+          {
+            "group": "Platform Libraries",
+            "pages": [
+              "libs/platform",
+              "libs/components",
+              "libs/state-management"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "libs/tools/generator",
+              "libs/tools/send",
+              "libs/tools/export"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guide/monorepo-structure",
+              "guide/nx-workspace",
+              "guide/dependency-injection"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "guide/cryptography",
+              "guide/encryption",
+              "guide/key-management"
+            ]
+          },
+          {
+            "group": "State Management",
+            "pages": [
+              "guide/state/overview",
+              "guide/state/services",
+              "guide/state/migrations"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "guide/testing/unit-tests",
+              "guide/testing/integration-tests",
+              "guide/testing/e2e-tests"
+            ]
+          },
+          {
+            "group": "Code Style",
+            "pages": [
+              "guide/typescript-style",
+              "guide/angular-patterns",
+              "guide/linting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/login-strategies",
+              "api/auth/token-service",
+              "api/auth/two-factor"
+            ]
+          },
+          {
+            "group": "Vault",
+            "pages": [
+              "api/vault/cipher-service",
+              "api/vault/folder-service",
+              "api/vault/collection-service"
+            ]
+          },
+          {
+            "group": "Cryptography",
+            "pages": [
+              "api/crypto/crypto-service",
+              "api/crypto/encryption",
+              "api/crypto/key-generation"
+            ]
+          },
+          {
+            "group": "Platform",
+            "pages": [
+              "api/platform/storage",
+              "api/platform/messaging",
+              "api/platform/logging"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-platform client applications (Browser Extension, Desktop, Web, CLI)",
+    "End-to-end encryption for password vault",
+    "Monorepo architecture with Nx workspace",
+    "Shared TypeScript libraries across applications",
+    "Angular-based UI framework",
+    "Browser extension with Manifest V3 support",
+    "Electron-based desktop application",
+    "CLI with interactive and API serve modes",
+    "Component library with Storybook",
+    "State management with migrations",
+    "Comprehensive cryptography layer",
+    "Two-factor authentication",
+    "Password generator and secure sharing (Send)",
+    "Import/export functionality",
+    "Admin console for organizations"
+  ],
+  "publicApiSurface": [
+    "bw login",
+    "bw unlock",
+    "bw sync",
+    "bw list items",
+    "bw get item",
+    "bw create item",
+    "bw edit item",
+    "bw delete item",
+    "bw generate",
+    "bw encode",
+    "bw config",
+    "bw serve",
+    "GET /list/object/:object",
+    "GET /object/:object/:id",
+    "POST /object/:object",
+    "PUT /object/:object/:id",
+    "DELETE /object/:object/:id",
+    "POST /generate",
+    "POST /sync"
+  ]
+}
